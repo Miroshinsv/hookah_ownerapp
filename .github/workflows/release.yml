@@ -44,19 +44,51 @@ jobs:
       - name: Get Flutter dependencies
         run: flutter pub get
 
-      - name: Decode keystore
+      - name: Извлечь changelog для этой версии
+        id: changelog
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode \
-            > android/app/release.keystore
+          python3 - <<'PYEOF'
+          import os, re
+
+          version = os.environ['VERSION']
+          path    = 'CHANGELOG.md'
+
+          body = ''
+          if os.path.exists(path):
+              content = open(path).read()
+              # Ищем блок ## [1.2.3] ... до следующего ## [ или конца файла
+              pattern = rf'## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+              match = re.search(pattern, content, re.DOTALL)
+              if match:
+                  body = match.group(1).strip()
+
+          if not body:
+              body = f'Release {version}'
+
+          # Записываем в файл, чтобы передать в следующий шаг
+          with open('release_body.md', 'w') as f:
+              f.write(body)
+
+          print('--- Release body ---')
+          print(body)
+          PYEOF
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/release.keystore
 
       - name: Write key.properties
+        env:
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
-          cat > android/key.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword=${{ secrets.KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEY_ALIAS }}
-          storeFile=release.keystore
-          EOF
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release.keystore\n' \
+            "$STORE_PASS" "$KEY_PASS" "$KEY_ALIAS" \
+            > android/key.properties
 
       - name: Build APK (release)
         run: |
@@ -79,7 +111,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: "Hookah Admin ${{ steps.version.outputs.TAG }}"
-          generate_release_notes: true
+          body_path: release_body.md
+          prerelease: false
           files: |
             hookah-admin-${{ steps.version.outputs.TAG }}.apk
             hookah-admin-${{ steps.version.outputs.TAG }}.aab

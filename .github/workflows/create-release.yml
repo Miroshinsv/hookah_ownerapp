@@ -1,0 +1,119 @@
+name: 🚀 Создать релиз
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия  (формат: 1.2.3)'
+        required: true
+        type: string
+      changes:
+        description: |
+          Список изменений — каждый пункт с новой строки.
+          Пример:
+            Добавлен фильтр заказов по дате
+            Исправлена ошибка авторизации
+            Обновлён дизайн экрана кальянных
+        required: true
+        type: string
+      prerelease:
+        description: 'Пометить как pre-release (бета)?'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Проверка версии
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Неверный формат версии '$VERSION'. Используйте X.Y.Z (например: 1.2.0)"
+            exit 1
+          fi
+          if git tag | grep -q "^v${VERSION}$"; then
+            echo "❌ Тег v${VERSION} уже существует"
+            exit 1
+          fi
+          echo "✅ Версия v${VERSION} корректна"
+
+      - name: Обновить CHANGELOG.md
+        env:
+          VERSION: ${{ inputs.version }}
+          CHANGES: ${{ inputs.changes }}
+        run: |
+          python3 - <<'PYEOF'
+          import os, re
+          from datetime import date
+
+          version = os.environ['VERSION']
+          changes_raw = os.environ['CHANGES']
+          today = date.today().strftime('%Y-%m-%d')
+
+          # Каждая непустая строка → пункт списка (если ещё не начинается с - или *)
+          bullets = []
+          for line in changes_raw.splitlines():
+              line = line.strip()
+              if not line:
+                  continue
+              if line.startswith(('-', '*', '#')):
+                  bullets.append(line)
+              else:
+                  bullets.append(f'- {line}')
+
+          if not bullets:
+              bullets = [f'- Релиз {version}']
+
+          new_entry = f'## [{version}] — {today}\n\n' + '\n'.join(bullets) + '\n'
+
+          path = 'CHANGELOG.md'
+          if os.path.exists(path):
+              content = open(path).read()
+              # Вставить после первой строки (заголовок # Changelog)
+              first_nl = content.find('\n')
+              if first_nl != -1:
+                  header = content[:first_nl + 1]
+                  rest   = content[first_nl + 1:].lstrip('\n')
+                  content = header + '\n' + new_entry + '\n' + rest
+              else:
+                  content = '# Changelog\n\n' + new_entry + '\n'
+          else:
+              content = f'# Changelog\n\n{new_entry}\n'
+
+          with open(path, 'w') as f:
+              f.write(content)
+
+          print(f'✅ CHANGELOG.md обновлён: [{version}] — {today}')
+          print('--- Новый блок ---')
+          print(new_entry)
+          PYEOF
+
+      - name: Показать diff
+        run: git diff CHANGELOG.md
+
+      - name: Коммит, тег и пуш
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add CHANGELOG.md
+          git commit -m "chore: release v${{ inputs.version }}"
+
+          git tag "v${{ inputs.version }}"
+
+          # Пушим коммит в ветку, из которой запущен workflow
+          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "v${{ inputs.version }}"
+
+          echo "✅ Тег v${{ inputs.version }} создан и запущен release.yml"
