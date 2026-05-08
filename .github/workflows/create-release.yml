@@ -165,9 +165,12 @@ jobs:
             exit 1
           fi
           printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/release.keystore
-          # Verify the decoded file is a valid keystore (PKCS12 or JKS magic bytes)
+          # Verify the decoded file is a valid keystore
+          # Accepted formats: JKS (feedfeed), JCEKS (cececece), PKCS12 ZIP (504b),
+          #                   PKCS12 DER/ASN.1 (30xx — most common on modern JDKs)
+          FIRST=$(xxd -l 1 android/app/release.keystore | awk '{print $2}')
           MAGIC=$(xxd -l 4 android/app/release.keystore | awk '{print $2$3}')
-          if [[ "$MAGIC" != "504b0304" && "$MAGIC" != "feedfeed" && "$MAGIC" != "cececece" ]]; then
+          if [[ "$MAGIC" != "504b0304" && "$MAGIC" != "feedfeed" && "$MAGIC" != "cececece" && "$FIRST" != "30" ]]; then
             echo "❌ Decoded keystore has invalid magic bytes: $MAGIC"
             echo "   KEYSTORE_BASE64 secret is likely corrupted or wrong"
             exit 1
