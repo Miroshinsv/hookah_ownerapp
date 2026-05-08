@@ -115,10 +115,10 @@ jobs:
             > android/key.properties
 
       - name: Build APK (release)
-        run: flutter build apk --release --dart-define=BASE_URL=https://api.hookahorder.ru
+        run: flutter build apk --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.setup.outputs.version }}
 
       - name: Build AAB (release)
-        run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru
+        run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.setup.outputs.version }}
 
       - name: Собрать артефакты в плоскую папку
         run: |
@@ -157,7 +157,7 @@ jobs:
       - run: flutter pub get
 
       - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=BASE_URL=https://api.hookahorder.ru
+        run: flutter build windows --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.setup.outputs.version }}
 
       - name: Упаковать в zip
         shell: pwsh

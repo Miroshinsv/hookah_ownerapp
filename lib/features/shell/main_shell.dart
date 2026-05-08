@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/config/app_config.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update/update_dialog.dart';
 import '../../core/update/update_service.dart';
@@ -137,7 +138,7 @@ class _UserHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  roleLabel,
+                  '$roleLabel · v${AppConfig.version}',
                   style: const TextStyle(
                     color: AppColors.muted,
                     fontSize: 11,
