@@ -159,7 +159,20 @@ jobs:
       - name: Декодировать keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/release.keystore
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "❌ KEYSTORE_BASE64 secret is empty"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/release.keystore
+          # Verify the decoded file is a valid keystore (PKCS12 or JKS magic bytes)
+          MAGIC=$(xxd -l 4 android/app/release.keystore | awk '{print $2$3}')
+          if [[ "$MAGIC" != "504b0304" && "$MAGIC" != "feedfeed" && "$MAGIC" != "cececece" ]]; then
+            echo "❌ Decoded keystore has invalid magic bytes: $MAGIC"
+            echo "   KEYSTORE_BASE64 secret is likely corrupted or wrong"
+            exit 1
+          fi
+          echo "✅ Keystore decoded successfully ($(wc -c < android/app/release.keystore) bytes)"
 
       - name: Создать key.properties
         env:
