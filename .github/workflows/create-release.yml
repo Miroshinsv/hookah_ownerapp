@@ -13,7 +13,6 @@ on:
           Пример:
             Добавлен фильтр заказов по дате
             Исправлена ошибка авторизации
-            Обновлён дизайн экрана кальянных
         required: true
         type: string
       prerelease:
@@ -22,36 +21,41 @@ on:
         type: boolean
         default: false
 
+# ─────────────────────────────────────────────────────────────────────────────
 jobs:
-  create-tag:
+
+  # ── 1. Changelog + коммит + тег ──────────────────────────────────────────
+  prepare:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag:     ${{ steps.out.outputs.tag }}
+      version: ${{ steps.out.outputs.version }}
+      build:   ${{ steps.out.outputs.build }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Проверка версии
         run: |
-          VERSION="${{ inputs.version }}"
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "❌ Неверный формат версии '$VERSION'. Используйте X.Y.Z (например: 1.2.0)"
+          V="${{ inputs.version }}"
+          if [[ ! "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Неверный формат '$V'. Используйте X.Y.Z"
             exit 1
           fi
-          if git tag | grep -q "^v${VERSION}$"; then
-            echo "❌ Тег v${VERSION} уже существует"
+          if git tag | grep -qx "v${V}"; then
+            echo "❌ Тег v${V} уже существует"
             exit 1
           fi
-          echo "✅ Версия v${VERSION} корректна"
 
       - name: Обновить CHANGELOG.md
         env:
           VERSION: ${{ inputs.version }}
-          CHANGES: ${{ inputs.changes }}
+          CHANGES:  ${{ inputs.changes }}
         run: |
           python3 - <<'PYEOF'
           import os, re
@@ -61,17 +65,12 @@ jobs:
           changes_raw = os.environ['CHANGES']
           today = date.today().strftime('%Y-%m-%d')
 
-          # Каждая непустая строка → пункт списка (если ещё не начинается с - или *)
           bullets = []
           for line in changes_raw.splitlines():
               line = line.strip()
               if not line:
                   continue
-              if line.startswith(('-', '*', '#')):
-                  bullets.append(line)
-              else:
-                  bullets.append(f'- {line}')
-
+              bullets.append(line if line.startswith(('-', '*', '#')) else f'- {line}')
           if not bullets:
               bullets = [f'- Релиз {version}']
 
@@ -80,40 +79,186 @@ jobs:
           path = 'CHANGELOG.md'
           if os.path.exists(path):
               content = open(path).read()
-              # Вставить после первой строки (заголовок # Changelog)
-              first_nl = content.find('\n')
-              if first_nl != -1:
-                  header = content[:first_nl + 1]
-                  rest   = content[first_nl + 1:].lstrip('\n')
-                  content = header + '\n' + new_entry + '\n' + rest
-              else:
-                  content = '# Changelog\n\n' + new_entry + '\n'
+              idx = content.find('\n') + 1
+              content = content[:idx] + '\n' + new_entry + '\n' + content[idx:].lstrip('\n')
           else:
               content = f'# Changelog\n\n{new_entry}\n'
 
-          with open(path, 'w') as f:
-              f.write(content)
-
-          print(f'✅ CHANGELOG.md обновлён: [{version}] — {today}')
-          print('--- Новый блок ---')
-          print(new_entry)
+          open(path, 'w').write(content)
+          open('release_body.md', 'w').write('\n'.join(bullets))
+          print(f'✅ CHANGELOG.md — [{version}] {today}')
           PYEOF
 
-      - name: Показать diff
-        run: git diff CHANGELOG.md
-
-      - name: Коммит, тег и пуш
+      - name: Коммит, тег, пуш
+        id: out
         run: |
+          V="${{ inputs.version }}"
+          BUILD=$(git rev-list --count HEAD)
+
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git add CHANGELOG.md
-          git commit -m "chore: release v${{ inputs.version }}"
-
-          git tag "v${{ inputs.version }}"
-
-          # Пушим коммит в ветку, из которой запущен workflow
+          git commit -m "chore: release v${V}"
+          git tag "v${V}"
           git push origin "HEAD:${{ github.ref_name }}"
-          git push origin "v${{ inputs.version }}"
+          git push origin "v${V}"
 
-          echo "✅ Тег v${{ inputs.version }} создан и запущен release.yml"
+          echo "tag=v${V}"    >> $GITHUB_OUTPUT
+          echo "version=${V}" >> $GITHUB_OUTPUT
+          echo "build=${BUILD}" >> $GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-body
+          path: release_body.md
+          retention-days: 1
+
+
+  # ── 2. Android APK + AAB ─────────────────────────────────────────────────
+  build-android:
+    runs-on: ubuntu-latest
+    needs: prepare
+    env:
+      JAVA_TOOL_OPTIONS: "-Xmx4g"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK
+        run: sdkmanager --install "ndk;27.0.12077973"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Подставить версию
+        run: |
+          sed -i "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build }}/" pubspec.yaml
+
+      - run: flutter pub get
+
+      - name: Декодировать keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: printf '%s' "$KEYSTORE_B64" | base64 --decode > android/app/release.keystore
+
+      - name: Создать key.properties
+        env:
+          STORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS:   ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS:  ${{ secrets.KEY_ALIAS }}
+        run: |
+          printf 'storePassword=%s\nkeyPassword=%s\nkeyAlias=%s\nstoreFile=release.keystore\n' \
+            "$STORE_PASS" "$KEY_PASS" "$KEY_ALIAS" > android/key.properties
+
+      - name: Build APK
+        run: flutter build apk --release --dart-define=BASE_URL=https://api.hookahorder.ru
+
+      - name: Build AAB
+        run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          retention-days: 1
+
+
+  # ── 3. Windows .exe (zip) ────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    needs: prepare
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - run: flutter config --enable-windows-desktop
+
+      - name: Подставить версию
+        shell: bash
+        run: |
+          sed -i "s/^version: .*/version: ${{ needs.prepare.outputs.version }}+${{ needs.prepare.outputs.build }}/" pubspec.yaml
+
+      - run: flutter pub get
+
+      - name: Build Windows
+        run: flutter build windows --release --dart-define=BASE_URL=https://api.hookahorder.ru
+
+      - name: Упаковать в zip
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "build\windows\x64\runner\Release\*" `
+            -DestinationPath "hookah-admin-windows.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifact
+          path: hookah-admin-windows.zip
+          retention-days: 1
+
+
+  # ── 4. GitHub Release ────────────────────────────────────────────────────
+  release:
+    runs-on: ubuntu-latest
+    needs: [prepare, build-android, build-windows]
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: android-artifacts, path: dist/android }
+
+      - uses: actions/download-artifact@v4
+        with: { name: windows-artifact, path: dist/windows }
+
+      - uses: actions/download-artifact@v4
+        with: { name: release-body, path: dist }
+
+      - name: Переименовать артефакты
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          mv dist/android/app-release.apk           "hookah-admin-${TAG}.apk"
+          mv dist/android/app-release.aab           "hookah-admin-${TAG}.aab"
+          mv dist/windows/hookah-admin-windows.zip  "hookah-admin-windows-${TAG}.zip"
+
+      - name: Опубликовать GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: "Hookah Admin ${{ needs.prepare.outputs.tag }}"
+          body_path: dist/release_body.md
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            hookah-admin-${{ needs.prepare.outputs.tag }}.apk
+            hookah-admin-${{ needs.prepare.outputs.tag }}.aab
+            hookah-admin-windows-${{ needs.prepare.outputs.tag }}.zip
