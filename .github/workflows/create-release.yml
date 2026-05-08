@@ -176,12 +176,16 @@ jobs:
       - name: Build AAB
         run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru
 
+      - name: Собрать артефакты в плоскую папку
+        run: |
+          mkdir -p staging
+          cp build/app/outputs/flutter-apk/app-release.apk staging/
+          cp build/app/outputs/bundle/release/app-release.aab staging/
+
       - uses: actions/upload-artifact@v4
         with:
           name: android-artifacts
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/bundle/release/app-release.aab
+          path: staging/
           retention-days: 1
 
 
