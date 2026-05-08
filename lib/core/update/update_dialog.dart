@@ -1,7 +1,6 @@
-import 'dart:io';
+import 'dart:io' as io;
 
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -43,46 +42,48 @@ class _UpdateSheetState extends State<_UpdateSheet> {
   Future<void> _startDownload() async {
     setState(() => _progress = 0.0);
 
+    final httpClient = io.HttpClient();
     try {
-      final client = http.Client();
-      final request = http.Request('GET', Uri.parse(widget.release.downloadUrl));
-      final response = await client.send(request);
+      final rq = await httpClient.getUrl(Uri.parse(widget.release.downloadUrl));
+      rq.headers.set('Accept', 'application/octet-stream');
+      // dart:io HttpClient follows redirects automatically (maxRedirects = 5)
+      final rs = await rq.close();
 
-      if (response.statusCode != 200) {
+      if (rs.statusCode != 200) {
         if (mounted) setState(() => _progress = null);
-        client.close();
         return;
       }
 
-      final total = response.contentLength ?? 0;
+      final total = rs.contentLength; // -1 if unknown
       var received = 0;
 
       final dir = await _apkDirectory();
-      final file = File('${dir.path}/hookah_admin_update.apk');
+      final file = io.File('${dir.path}/hookah_admin_update.apk');
       if (await file.exists()) await file.delete();
       final sink = file.openWrite();
 
-      await response.stream.listen((chunk) {
+      await for (final chunk in rs) {
         sink.add(chunk);
         received += chunk.length;
         if (total > 0 && mounted) {
           setState(() => _progress = received / total);
         }
-      }).asFuture();
+      }
 
       await sink.flush();
       await sink.close();
-      client.close();
 
       if (!mounted) return;
       Navigator.of(context).pop();
       await ApkInstaller.install(file.path);
     } catch (_) {
       if (mounted) setState(() => _progress = -1);
+    } finally {
+      httpClient.close(force: true);
     }
   }
 
-  Future<Directory> _apkDirectory() async {
+  Future<io.Directory> _apkDirectory() async {
     try {
       final ext = await getExternalStorageDirectory();
       if (ext != null) return ext;
