@@ -38,7 +38,7 @@ class MainActivity : FlutterActivity() {
         val uri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             FileProvider.getUriForFile(
                 this,
-                "${applicationContext.packageName}.fileprovider",
+                "${applicationContext.packageName}.update_provider",
                 file,
             )
         } else {
