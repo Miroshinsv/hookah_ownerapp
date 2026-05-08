@@ -1,0 +1,14 @@
+# Copy this file to android/key.properties and fill in your values.
+# NEVER commit key.properties to git (it's in .gitignore).
+#
+# To generate a keystore:
+#   keytool -genkey -v -keystore release.keystore -alias hookah_admin \
+#           -keyalg RSA -keysize 2048 -validity 10000
+#
+# Then base64-encode it for the GitHub secret KEYSTORE_BASE64:
+#   base64 -w 0 release.keystore
+
+storePassword=your_store_password
+keyPassword=your_key_password
+keyAlias=hookah_admin
+storeFile=release.keystore

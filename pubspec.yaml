@@ -1,0 +1,82 @@
+name: hookah_admin
+description: "Hookah Admin — mobile admin panel for hookah lounge network"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.3.5
+
+  # GraphQL
+  graphql_flutter: ^5.2.0-beta.7
+
+  # WebSocket
+  web_socket_channel: ^3.0.1
+
+  # Navigation
+  go_router: ^14.8.1
+
+  # Storage
+  shared_preferences: ^2.3.3
+
+  # Map
+  flutter_map: ^8.1.1
+  latlong2: ^0.9.1
+
+  # Phone mask
+  mask_text_input_formatter: ^2.9.0
+
+  # Notifications & vibration (mobile only)
+  flutter_local_notifications: ^18.0.1
+  vibration: ^2.0.0
+
+  # Utils
+  intl: ^0.20.2
+  uuid: ^4.5.1
+  http: ^1.2.2
+  package_info_plus: ^8.3.0
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  riverpod_generator: ^2.4.3
+  custom_lint: ^0.7.5
+  riverpod_lint: ^2.3.13
+  flutter_launcher_icons: ^0.14.3
+  flutter_native_splash: ^2.4.5
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/hookah.png"
+  adaptive_icon_background: "#0a0a0a"
+  adaptive_icon_foreground: "assets/icon/hookah_fg.png"
+  min_sdk_android: 21
+  web:
+    generate: false
+
+flutter_native_splash:
+  color: "#0a0a0a"
+  image: assets/splash/hookah_splash.png
+  android_12:
+    color: "#0a0a0a"
+    image: assets/splash/hookah_splash.png
+    icon_background_color: "#0a0a0a"
+  fullscreen: false
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/icon/
+    - assets/splash/
