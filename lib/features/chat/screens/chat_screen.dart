@@ -109,8 +109,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final myUserId = auth.userId;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: Text('Чат — #${widget.orderId.substring(0, 8)}'),
+        title: Text(
+            'Чат — #${widget.orderId.substring(0, widget.orderId.length.clamp(0, 8))}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -126,6 +128,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const Expanded(
               child: Center(
                   child: CircularProgressIndicator(color: AppColors.gold)),
+            )
+          else if (state.error != null && state.messages.isEmpty)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline,
+                          color: AppColors.red, size: 40),
+                      const SizedBox(height: 12),
+                      Text(
+                        state.error!,
+                        style: const TextStyle(
+                            color: AppColors.red, fontSize: 13),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      TextButton(
+                        onPressed: () => ref
+                            .read(chatProviderFamily(widget.orderId).notifier)
+                            .fetch(),
+                        child: const Text('Повторить'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             )
           else
             Expanded(

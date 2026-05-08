@@ -13,8 +13,9 @@ import '../providers/staff_provider.dart';
 
 class StaffFormScreen extends ConsumerStatefulWidget {
   final String? staffId;
+  final String? preselectedLoungeId;
 
-  const StaffFormScreen({super.key, this.staffId});
+  const StaffFormScreen({super.key, this.staffId, this.preselectedLoungeId});
 
   @override
   ConsumerState<StaffFormScreen> createState() => _StaffFormScreenState();
@@ -38,6 +39,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedLoungeId = widget.preselectedLoungeId;
     if (_isEdit) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadStaff());
     }

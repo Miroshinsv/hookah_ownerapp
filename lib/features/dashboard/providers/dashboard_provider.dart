@@ -121,6 +121,43 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     });
   }
 
+  Future<String?> updateStatus(String orderId, OrderStatus status) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kUpdateOrderStatusMutation),
+        variables: {'orderId': orderId, 'status': status.apiValue},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка обновления';
+      }
+      _applyStatusUpdate(orderId, status.apiValue);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> deleteOrder(String orderId) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kDeleteOrderMutation),
+        variables: {'orderId': orderId},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка удаления';
+      }
+      final newOrders = state.orders.where((o) => o.id != orderId).toList();
+      final newKnownIds = {...state.knownIds}..remove(orderId);
+      state = state.copyWith(orders: newOrders, knownIds: newKnownIds);
+      _updateAlert(newOrders);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   void _updateAlert(List<OrderModel> orders) {
     final hasNew = orders.any((o) => o.status == OrderStatus.newOrder);
     if (hasNew) {

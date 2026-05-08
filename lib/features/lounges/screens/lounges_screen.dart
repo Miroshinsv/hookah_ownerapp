@@ -11,6 +11,8 @@ import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/staff_model.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../staff/providers/staff_provider.dart';
+import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
 
 class LoungesScreen extends ConsumerWidget {
@@ -176,6 +178,7 @@ class _LoungeDetailScreen extends ConsumerStatefulWidget {
 
 class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
   bool _deleting = false;
+  String? _deletingStaffId;
 
   Future<void> _delete() async {
     final confirm = await showDialog<bool>(
@@ -211,9 +214,72 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
     }
   }
 
+  Future<void> _deleteStaff(StaffModel staff) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Удалить сотрудника?'),
+        content: Text('«${staff.fullName}» будет удалён из персонала.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить', style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _deletingStaffId = staff.id);
+    final err = await ref.read(staffProvider.notifier).deleteStaff(staff.id);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() => _deletingStaffId = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    } else {
+      await ref.read(loungesProvider.notifier).fetch();
+      if (mounted) setState(() => _deletingStaffId = null);
+    }
+  }
+
+  void _navigateToAddStaff(String loungeId) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UncontrolledProviderScope(
+          container: ProviderScope.containerOf(context),
+          child: StaffFormScreen(preselectedLoungeId: loungeId),
+        ),
+      ),
+    ).then((_) {
+      if (mounted) ref.read(loungesProvider.notifier).fetch();
+    });
+  }
+
+  void _navigateToEditStaff(StaffModel staff) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UncontrolledProviderScope(
+          container: ProviderScope.containerOf(context),
+          child: StaffFormScreen(staffId: staff.id),
+        ),
+      ),
+    ).then((_) {
+      if (mounted) ref.read(loungesProvider.notifier).fetch();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final lounge = widget.lounge;
+    final lounge = ref.watch(loungesProvider).lounges
+            .where((l) => l.id == widget.lounge.id)
+            .firstOrNull ??
+        widget.lounge;
+    final auth = ref.watch(authProvider);
+    final canManageStaff = auth.canManageStaff;
     final hasCoords =
         lounge.latitude != null && lounge.longitude != null;
     final schedule = _parseSchedule(lounge.schedule);
@@ -345,16 +411,48 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
             ),
             const SizedBox(height: 16),
           ],
-          if (lounge.staff.isNotEmpty) ...[
-            const Text(
-              'Персонал',
-              style: TextStyle(
-                  color: AppColors.text,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600),
+          if (lounge.staff.isNotEmpty || canManageStaff) ...[
+            Row(
+              children: [
+                const Text(
+                  'Персонал',
+                  style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                if (canManageStaff)
+                  IconButton(
+                    icon: const Icon(Icons.person_add_outlined),
+                    color: AppColors.gold,
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    tooltip: 'Добавить сотрудника',
+                    onPressed: () => _navigateToAddStaff(lounge.id),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
-            ...lounge.staff.map((s) => _StaffTile(staff: s)),
+            if (lounge.staff.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Нет сотрудников',
+                  style: TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
+              )
+            else
+              ...lounge.staff.map(
+                (s) => _StaffTile(
+                  staff: s,
+                  canManage: canManageStaff,
+                  deleting: _deletingStaffId == s.id,
+                  onEdit: () => _navigateToEditStaff(s),
+                  onDelete: () => _deleteStaff(s),
+                ),
+              ),
           ],
         ],
       ),
@@ -385,13 +483,29 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
 
 class _StaffTile extends StatelessWidget {
   final StaffModel staff;
-  const _StaffTile({required this.staff});
+  final bool canManage;
+  final bool deleting;
+  final VoidCallback? onEdit;
+  final VoidCallback? onDelete;
+
+  const _StaffTile({
+    required this.staff,
+    this.canManage = false,
+    this.deleting = false,
+    this.onEdit,
+    this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: EdgeInsets.only(
+        left: 12,
+        right: canManage ? 4 : 12,
+        top: 8,
+        bottom: 8,
+      ),
       decoration: BoxDecoration(
         color: AppColors.surface2,
         borderRadius: BorderRadius.circular(8),
@@ -410,6 +524,35 @@ class _StaffTile extends StatelessWidget {
             staff.role.label,
             style: const TextStyle(color: AppColors.muted, fontSize: 12),
           ),
+          if (canManage) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              iconSize: 16,
+              icon: const Icon(Icons.edit_outlined, color: AppColors.muted),
+              onPressed: onEdit,
+            ),
+            if (deleting)
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: Padding(
+                  padding: EdgeInsets.all(6),
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.red),
+                ),
+              )
+            else
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                iconSize: 16,
+                icon: const Icon(Icons.person_remove_outlined,
+                    color: AppColors.red),
+                onPressed: onDelete,
+              ),
+          ],
         ],
       ),
     );

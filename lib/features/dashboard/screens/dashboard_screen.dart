@@ -205,33 +205,111 @@ class _CounterCard extends StatelessWidget {
   }
 }
 
-class _DashboardOrderTile extends StatelessWidget {
+class _DashboardOrderTile extends ConsumerStatefulWidget {
   final OrderModel order;
   final bool isAdmin;
 
   const _DashboardOrderTile({required this.order, required this.isAdmin});
 
   @override
+  ConsumerState<_DashboardOrderTile> createState() =>
+      _DashboardOrderTileState();
+}
+
+class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
+  String? _actionLoading;
+  bool _unread = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkUnread();
+  }
+
+  Future<void> _checkUnread() async {
+    final storage = ref.read(storageServiceProvider);
+    if (mounted) {
+      setState(() => _unread = storage.unreadOrderIds.contains(widget.order.id));
+    }
+  }
+
+  Future<void> _changeStatus(OrderStatus status) async {
+    setState(() => _actionLoading = status.apiValue);
+    final err = await ref
+        .read(dashboardProvider.notifier)
+        .updateStatus(widget.order.id, status);
+    if (mounted) {
+      setState(() => _actionLoading = null);
+      if (err != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Удалить заказ?'),
+        content: Text(
+            'Заказ #${widget.order.id.substring(0, widget.order.id.length.clamp(0, 8))} будет удалён.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить',
+                style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _actionLoading = 'delete');
+    final err = await ref
+        .read(dashboardProvider.notifier)
+        .deleteOrder(widget.order.id);
+    if (mounted) {
+      setState(() => _actionLoading = null);
+      if (err != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final order = widget.order;
     final isNew = order.status == OrderStatus.newOrder;
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isNew ? AppColors.blue.withOpacity(0.07) : AppColors.surface,
+        color: isNew ? AppColors.blue.withValues(alpha: 0.07) : AppColors.surface,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isNew ? AppColors.blue.withOpacity(0.5) : AppColors.border,
+          color: isNew ? AppColors.blue.withValues(alpha: 0.5) : AppColors.border,
           width: isNew ? 1.5 : 1,
         ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
+          Row(
+            children: [
+              if (isNew)
+                const Padding(
+                  padding: EdgeInsets.only(right: 4),
+                  child: Icon(Icons.fiber_new,
+                      color: AppColors.blue, size: 16),
+                ),
+              Expanded(
+                child: Text(
                   '#${order.id.substring(0, order.id.length.clamp(0, 8))}',
                   style: TextStyle(
                     color: isNew ? AppColors.blue : AppColors.text,
@@ -239,20 +317,127 @@ class _DashboardOrderTile extends StatelessWidget {
                     fontSize: 13,
                   ),
                 ),
-                if (order.flavor != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    order.flavor!,
-                    style: const TextStyle(color: AppColors.muted, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
+              ),
+              StatusChip(status: order.status),
+            ],
           ),
-          StatusChip(status: order.status),
+          if (order.flavor != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              order.flavor!,
+              style:
+                  const TextStyle(color: AppColors.muted, fontSize: 12),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              ...order.status.nextStatuses.map((s) => _ActionChip(
+                    label: _statusLabel(s),
+                    color: _statusColor(s),
+                    loading: _actionLoading == s.apiValue,
+                    onTap: () => _changeStatus(s),
+                  )),
+              if (widget.isAdmin)
+                _ActionChip(
+                  label: 'Удалить',
+                  color: AppColors.red,
+                  loading: _actionLoading == 'delete',
+                  onTap: _delete,
+                ),
+              Stack(
+                children: [
+                  _ActionChip(
+                    label: 'Чат',
+                    color: AppColors.gold,
+                    loading: false,
+                    onTap: () {
+                      ref
+                          .read(storageServiceProvider)
+                          .markOrderRead(order.id);
+                      setState(() => _unread = false);
+                      context.push('/chat/${order.id}');
+                    },
+                  ),
+                  if (_unread)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+
+  String _statusLabel(OrderStatus s) => switch (s) {
+        OrderStatus.inProgress => 'В работу',
+        OrderStatus.completed => 'Завершить',
+        OrderStatus.canceled => 'Отменить',
+        _ => s.label,
+      };
+
+  Color _statusColor(OrderStatus s) => switch (s) {
+        OrderStatus.newOrder => AppColors.blue,
+        OrderStatus.inProgress => AppColors.yellow,
+        OrderStatus.completed => AppColors.green,
+        OrderStatus.canceled => AppColors.red,
+      };
+}
+
+class _ActionChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  final bool loading;
+  final VoidCallback onTap;
+
+  const _ActionChip({
+    required this.label,
+    required this.color,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: loading
+            ? SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: color),
+              )
+            : Text(
+                label,
+                style: TextStyle(
+                    color: color,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
