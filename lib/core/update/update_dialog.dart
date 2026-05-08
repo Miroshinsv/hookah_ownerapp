@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:open_file_plus/open_file_plus.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../theme/app_theme.dart';
 import 'update_service.dart';
@@ -23,15 +27,75 @@ Future<void> showUpdateDialog(
   );
 }
 
-class _UpdateSheet extends StatelessWidget {
+class _UpdateSheet extends StatefulWidget {
   final ReleaseInfo release;
 
   const _UpdateSheet({required this.release});
 
   @override
+  State<_UpdateSheet> createState() => _UpdateSheetState();
+}
+
+class _UpdateSheetState extends State<_UpdateSheet> {
+  // null = idle, 0..1 = downloading, -1 = error
+  double? _progress;
+
+  Future<void> _startDownload() async {
+    setState(() => _progress = 0.0);
+
+    try {
+      final client = http.Client();
+      final request = http.Request('GET', Uri.parse(widget.release.downloadUrl));
+      final response = await client.send(request);
+
+      if (response.statusCode != 200) {
+        if (mounted) setState(() => _progress = null);
+        client.close();
+        return;
+      }
+
+      final total = response.contentLength ?? 0;
+      var received = 0;
+
+      final dir = await _apkDirectory();
+      final file = File('${dir.path}/hookah_admin_update.apk');
+      if (await file.exists()) await file.delete();
+      final sink = file.openWrite();
+
+      await response.stream.listen((chunk) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0 && mounted) {
+          setState(() => _progress = received / total);
+        }
+      }).asFuture();
+
+      await sink.flush();
+      await sink.close();
+      client.close();
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await OpenFile.open(file.path);
+    } catch (_) {
+      if (mounted) setState(() => _progress = -1);
+    }
+  }
+
+  Future<Directory> _apkDirectory() async {
+    try {
+      final ext = await getExternalStorageDirectory();
+      if (ext != null) return ext;
+    } catch (_) {}
+    return getTemporaryDirectory();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final df = DateFormat('dd.MM.yyyy');
-    final changelog = release.changelog.trim();
+    final changelog = widget.release.changelog.trim();
+    final isDownloading = _progress != null && _progress! >= 0;
+    final isError = _progress == -1;
 
     return SafeArea(
       child: Padding(
@@ -66,7 +130,7 @@ class _UpdateSheet extends StatelessWidget {
                         color: AppColors.gold.withValues(alpha: 0.4)),
                   ),
                   child: Text(
-                    release.tagName,
+                    widget.release.tagName,
                     style: const TextStyle(
                       color: AppColors.gold,
                       fontSize: 13,
@@ -75,10 +139,10 @@ class _UpdateSheet extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Expanded(
+                const Expanded(
                   child: Text(
                     'Доступно обновление',
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: AppColors.text,
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
@@ -90,7 +154,7 @@ class _UpdateSheet extends StatelessWidget {
 
             const SizedBox(height: 4),
             Text(
-              df.format(release.publishedAt),
+              df.format(widget.release.publishedAt),
               style: const TextStyle(color: AppColors.muted, fontSize: 12),
             ),
 
@@ -128,12 +192,42 @@ class _UpdateSheet extends StatelessWidget {
 
             const SizedBox(height: 24),
 
+            // Progress bar
+            if (isDownloading && _progress! >= 0 && _progress! < 1) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: _progress,
+                  minHeight: 6,
+                  backgroundColor: AppColors.border,
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(AppColors.gold),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${(_progress! * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            if (isError) ...[
+              const Text(
+                'Ошибка загрузки. Попробуйте снова.',
+                style: TextStyle(color: Colors.redAccent, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // Actions
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: isDownloading && !isError
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: AppColors.border),
                       foregroundColor: AppColors.muted,
@@ -148,24 +242,23 @@ class _UpdateSheet extends StatelessWidget {
                 Expanded(
                   flex: 2,
                   child: ElevatedButton(
-                    onPressed: () async {
-                      Navigator.of(context).pop();
-                      final uri = Uri.parse(release.downloadUrl);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(uri,
-                            mode: LaunchMode.externalApplication);
-                      }
-                    },
+                    onPressed: isDownloading && !isError ? null : _startDownload,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.gold,
                       foregroundColor: Colors.black,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
+                      disabledBackgroundColor:
+                          AppColors.gold.withValues(alpha: 0.5),
                     ),
-                    child: const Text(
-                      'Скачать и установить',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                    child: Text(
+                      isError
+                          ? 'Повторить'
+                          : isDownloading
+                              ? 'Загрузка...'
+                              : 'Скачать и установить',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),

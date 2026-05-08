@@ -88,7 +88,9 @@ class UpdateService {
         .split('.')
         .map((s) => int.tryParse(s.replaceAll(RegExp(r'[^\d]'), '')) ?? 0)
         .toList();
-    while (parts.length < 3) parts.add(0);
+    while (parts.length < 3) {
+      parts.add(0);
+    }
     return parts;
   }
 }
