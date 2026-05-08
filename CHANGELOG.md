@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.5] — 2026-05-08
+
+- Update pipeline
+
 ## [1.0.4] — 2026-05-08
 
 - Фикс pipeline
