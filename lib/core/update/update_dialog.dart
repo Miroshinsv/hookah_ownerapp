@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:open_file_plus/open_file_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../theme/app_theme.dart';
+import 'apk_installer.dart';
 import 'update_service.dart';
 
 /// Shows a modal bottom sheet with release info.
@@ -76,7 +76,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
 
       if (!mounted) return;
       Navigator.of(context).pop();
-      await OpenFile.open(file.path);
+      await ApkInstaller.install(file.path);
     } catch (_) {
       if (mounted) setState(() => _progress = -1);
     }
