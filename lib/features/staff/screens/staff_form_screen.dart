@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/staff_model.dart';
 import '../../../shared/widgets/loading_button.dart';
 import '../../auth/providers/auth_provider.dart';
@@ -27,9 +28,11 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   final _passwordCtrl = TextEditingController();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
+  final _loungeSearchCtrl = TextEditingController();
 
-  String? _selectedRole;
-  String? _selectedLoungeId;
+  List<String> _selectedRoles = [];
+  List<String> _selectedLoungeIds = [];
+  List<LoungeModel> _filteredLounges = [];
   bool _loading = false;
   bool _obscurePassword = true;
   String? _generatedPassword;
@@ -39,7 +42,9 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedLoungeId = widget.preselectedLoungeId;
+    if (widget.preselectedLoungeId != null) {
+      _selectedLoungeIds = [widget.preselectedLoungeId!];
+    }
     if (_isEdit) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _loadStaff());
     }
@@ -51,8 +56,10 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     if (m == null) return;
     _firstNameCtrl.text = m.firstName ?? '';
     _lastNameCtrl.text = m.lastName ?? '';
-    _selectedRole = m.role.apiValue;
-    _selectedLoungeId = m.loungeId;
+    _selectedRoles = m.roles.map((r) => r.apiValue).toList();
+    _selectedLoungeIds = List<String>.from(m.loungeIds.isNotEmpty
+        ? m.loungeIds
+        : (m.loungeId != null ? [m.loungeId!] : []));
     setState(() {});
   }
 
@@ -62,6 +69,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     _passwordCtrl.dispose();
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
+    _loungeSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -93,15 +101,15 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         'lastName': _lastNameCtrl.text.trim().isEmpty
             ? null
             : _lastNameCtrl.text.trim(),
-        'role': _selectedRole,
-        'loungeId': _selectedLoungeId,
+        'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
+        'loungeIds': _selectedLoungeIds,
       };
       if (_passwordCtrl.text.isNotEmpty) {
         vars['password'] = _passwordCtrl.text;
       }
       err = await ref.read(staffProvider.notifier).updateStaff(vars);
     } else {
-      if (_selectedRole == 'admin') {
+      if (_selectedRoles.length == 1 && _selectedRoles.first == 'admin') {
         err = await ref.read(staffProvider.notifier).createAdmin({
           'userId': _userIdCtrl.text.trim(),
           'password': _passwordCtrl.text,
@@ -116,14 +124,14 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         err = await ref.read(staffProvider.notifier).createStaff({
           'userId': _userIdCtrl.text.trim(),
           'password': _passwordCtrl.text,
-          'loungeId': _selectedLoungeId ?? '',
+          'loungeIds': _selectedLoungeIds,
           'firstName': _firstNameCtrl.text.trim().isEmpty
               ? null
               : _firstNameCtrl.text.trim(),
           'lastName': _lastNameCtrl.text.trim().isEmpty
               ? null
               : _lastNameCtrl.text.trim(),
-          'role': _selectedRole ?? 'waiter',
+          'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
         });
       }
     }
@@ -139,19 +147,27 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     }
   }
 
-  List<String> _availableRoles() {
+  List<(String, String)> _availableRoles() {
     final auth = ref.read(authProvider);
+    final roles = [
+      ('hookah_master', 'Кальянный мастер'),
+      ('hostess', 'Хостес'),
+      ('waiter', 'Официант'),
+      ('owner', 'Владелец'),
+    ];
     if (auth.isAdmin) {
-      return ['hookah_master', 'hostess', 'waiter', 'owner', 'admin'];
+      return [...roles, ('admin', 'Администратор')];
     }
-    return ['hookah_master', 'hostess', 'waiter'];
+    return roles.take(3).toList();
   }
+
+  bool get _needsLounge =>
+      _selectedRoles.any((r) => r != 'admin');
 
   @override
   Widget build(BuildContext context) {
     final lounges = ref.watch(loungesProvider).lounges;
     final roles = _availableRoles();
-    final needsLounge = _selectedRole != null && _selectedRole != 'admin';
 
     return Scaffold(
       appBar: AppBar(
@@ -260,44 +276,125 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
               controller: _lastNameCtrl,
               decoration: const InputDecoration(labelText: 'Фамилия'),
             ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              value: _selectedRole,
-              decoration: const InputDecoration(labelText: 'Роль *'),
-              dropdownColor: AppColors.surface2,
-              items: roles.map((r) {
-                final label = StaffRoleX.fromString(r).label;
-                return DropdownMenuItem(
-                  value: r,
-                  child: Text(label,
-                      style: const TextStyle(color: AppColors.text)),
+            const SizedBox(height: 16),
+            const Text(
+              'Роли *',
+              style: TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: roles.map((r) {
+                final isSelected = _selectedRoles.contains(r.$1);
+                return FilterChip(
+                  label: Text(r.$2),
+                  selected: isSelected,
+                  onSelected: (on) => setState(() {
+                    if (on) {
+                      _selectedRoles.add(r.$1);
+                    } else {
+                      _selectedRoles.remove(r.$1);
+                    }
+                  }),
                 );
               }).toList(),
-              onChanged: (v) => setState(() => _selectedRole = v),
-              validator: (v) => v == null ? 'Выберите роль' : null,
             ),
-            if (needsLounge && lounges.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                value: _selectedLoungeId,
-                decoration: const InputDecoration(labelText: 'Кальянная *'),
-                dropdownColor: AppColors.surface2,
-                items: lounges
-                    .map((l) => DropdownMenuItem(
-                          value: l.id,
-                          child: Text(l.name,
-                              style: const TextStyle(color: AppColors.text)),
-                        ))
-                    .toList(),
-                onChanged: (v) => setState(() => _selectedLoungeId = v),
-                validator: (v) =>
-                    needsLounge && v == null ? 'Выберите кальянную' : null,
+            if (_selectedRoles.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'Выберите хотя бы одну роль',
+                  style: TextStyle(color: AppColors.red, fontSize: 12),
+                ),
               ),
+            if (_needsLounge) ...[
+              const SizedBox(height: 16),
+              if (_selectedLoungeIds.isNotEmpty) ...[
+                const Text(
+                  'Выбранные кальянные',
+                  style: TextStyle(color: AppColors.muted, fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: _selectedLoungeIds.map((id) {
+                    final lounge = lounges.where((l) => l.id == id).firstOrNull;
+                    return Chip(
+                      label: Text(lounge?.name ?? id),
+                      deleteIcon: const Icon(Icons.close, size: 16),
+                      onDeleted: () => setState(() {
+                        _selectedLoungeIds.remove(id);
+                        _filteredLounges = [];
+                      }),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
+              ],
+              TextFormField(
+                controller: _loungeSearchCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Кальянная *',
+                  hintText: 'Поиск по названию...',
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: (q) {
+                  setState(() {
+                    _filteredLounges = q.isEmpty
+                        ? []
+                        : lounges
+                            .where((l) =>
+                                l.name
+                                    .toLowerCase()
+                                    .contains(q.toLowerCase()) &&
+                                !_selectedLoungeIds.contains(l.id))
+                            .toList();
+                  });
+                },
+                validator: (_) => _needsLounge && _selectedLoungeIds.isEmpty
+                    ? 'Выберите кальянную'
+                    : null,
+              ),
+              if (_filteredLounges.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface2,
+                    border: Border.all(color: AppColors.border),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _filteredLounges.length,
+                    itemBuilder: (_, i) {
+                      final l = _filteredLounges[i];
+                      return ListTile(
+                        dense: true,
+                        title: Text(l.name,
+                            style: const TextStyle(color: AppColors.text)),
+                        onTap: () => setState(() {
+                          _selectedLoungeIds.add(l.id);
+                          _loungeSearchCtrl.clear();
+                          _filteredLounges = [];
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              if (lounges.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text('Нет кальянных',
+                      style: TextStyle(color: AppColors.muted)),
+                ),
             ],
             const SizedBox(height: 32),
             LoadingButton(
               label: _isEdit ? 'Сохранить' : 'Создать',
-              onPressed: _submit,
+              onPressed: _selectedRoles.isEmpty ? null : _submit,
               loading: _loading,
             ),
             const SizedBox(height: 24),

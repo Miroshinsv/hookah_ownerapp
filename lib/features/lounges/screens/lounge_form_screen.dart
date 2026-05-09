@@ -269,7 +269,7 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
             ),
           ),
           Text(
-            staff.role.label,
+            staff.rolesLabel(isAdmin: true),
             style: const TextStyle(color: AppColors.muted, fontSize: 12),
           ),
           const SizedBox(width: 4),

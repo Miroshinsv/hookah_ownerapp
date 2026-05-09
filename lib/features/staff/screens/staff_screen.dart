@@ -136,7 +136,7 @@ class _StaffCardState extends ConsumerState<_StaffCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              m.role.label,
+              m.rolesLabel(isAdmin: widget.isAdmin),
               style: const TextStyle(color: AppColors.gold, fontSize: 12),
             ),
             if (loungeName != null)

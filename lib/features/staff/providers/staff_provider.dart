@@ -35,11 +35,13 @@ class StaffNotifier extends StateNotifier<StaffState> {
   StaffNotifier(this._client) : super(const StaffState());
 
   Future<void> fetch() async {
+    if (!mounted) return;
     state = state.copyWith(loading: true, clearError: true);
     try {
       final result = await _client.query(QueryOptions(
         document: gql(kStaffQuery),
       ));
+      if (!mounted) return;
       if (result.hasException) throw result.exception!;
 
       final list = (result.data?['staff'] as List<dynamic>? ?? [])
@@ -47,8 +49,10 @@ class StaffNotifier extends StateNotifier<StaffState> {
           .toList();
 
       list.sort((a, b) => a.fullName.compareTo(b.fullName));
+      if (!mounted) return;
       state = state.copyWith(staff: list, loading: false);
     } catch (e) {
+      if (!mounted) return;
       state = state.copyWith(loading: false, error: e.toString());
     }
   }
@@ -63,7 +67,7 @@ class StaffNotifier extends StateNotifier<StaffState> {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
             'Ошибка создания';
       }
-      await fetch();
+      if (mounted) await fetch();
       return null;
     } catch (e) {
       return e.toString();
@@ -80,7 +84,7 @@ class StaffNotifier extends StateNotifier<StaffState> {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
             'Ошибка создания';
       }
-      await fetch();
+      if (mounted) await fetch();
       return null;
     } catch (e) {
       return e.toString();
@@ -97,7 +101,7 @@ class StaffNotifier extends StateNotifier<StaffState> {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
             'Ошибка обновления';
       }
-      await fetch();
+      if (mounted) await fetch();
       return null;
     } catch (e) {
       return e.toString();
@@ -114,9 +118,11 @@ class StaffNotifier extends StateNotifier<StaffState> {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
             'Ошибка удаления';
       }
-      state = state.copyWith(
-        staff: state.staff.where((s) => s.id != staffId).toList(),
-      );
+      if (mounted) {
+        state = state.copyWith(
+          staff: state.staff.where((s) => s.id != staffId).toList(),
+        );
+      }
       return null;
     } catch (e) {
       return e.toString();

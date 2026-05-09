@@ -227,8 +227,16 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
                 text: df.format(order.createdAt.toLocal())),
             if (order.flavor != null)
               _Row(icon: Icons.smoke_free, text: order.flavor!),
-            if (order.phone != null)
-              _Row(icon: Icons.phone_outlined, text: order.phone!),
+            if (order.phone != null || order.firstName != null || order.lastName != null) ...[
+              _Row(icon: Icons.phone_outlined, text: order.phone ?? '—'),
+              if ((order.firstName?.isNotEmpty ?? false) || (order.lastName?.isNotEmpty ?? false))
+                _Row(
+                  icon: Icons.person_outline,
+                  text: [order.firstName, order.lastName]
+                      .where((v) => v != null && v.isNotEmpty)
+                      .join(' '),
+                ),
+            ],
             if (order.arrivalAt != null)
               _Row(icon: Icons.event, text: 'Приход: ${order.arrivalAt}'),
             if (order.comment != null)

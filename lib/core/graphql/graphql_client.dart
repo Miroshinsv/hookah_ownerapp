@@ -73,6 +73,7 @@ class _GraphQLHttpClient extends http.BaseClient {
       return '"$escaped"';
     }
     if (v is num || v is bool) return '$v';
+    if (v is List) return '[${v.map(_fmt).join(', ')}]';
     return '"$v"';
   }
 }

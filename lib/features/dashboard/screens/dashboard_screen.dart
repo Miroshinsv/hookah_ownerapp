@@ -331,6 +331,28 @@ class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
               overflow: TextOverflow.ellipsis,
             ),
           ],
+          if ((order.firstName?.isNotEmpty ?? false) ||
+              (order.lastName?.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Icon(Icons.person_outline,
+                    size: 12, color: AppColors.muted),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    [order.firstName, order.lastName]
+                        .where((v) => v != null && v.isNotEmpty)
+                        .join(' '),
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 8),
           Wrap(
             spacing: 6,

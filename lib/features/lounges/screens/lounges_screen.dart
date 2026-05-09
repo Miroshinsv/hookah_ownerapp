@@ -288,7 +288,7 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
       appBar: AppBar(
         title: Text(lounge.name),
         actions: [
-          if (widget.isAdmin) ...[
+          if (auth.isAdmin || lounge.ownerUserId == auth.userId)
             IconButton(
               icon: const Icon(Icons.edit_outlined),
               onPressed: () {
@@ -296,6 +296,7 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
                 context.push('/lounge-form/${lounge.id}');
               },
             ),
+          if (auth.isAdmin) ...[
             if (_deleting)
               const Padding(
                 padding: EdgeInsets.all(16),
@@ -521,7 +522,7 @@ class _StaffTile extends StatelessWidget {
             ),
           ),
           Text(
-            staff.role.label,
+            staff.rolesLabel(isAdmin: true),
             style: const TextStyle(color: AppColors.muted, fontSize: 12),
           ),
           if (canManage) ...[

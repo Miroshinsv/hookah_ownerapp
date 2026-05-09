@@ -17,6 +17,8 @@ query Orders($limit: Int) {
     flavor
     comment
     phone
+    firstName
+    lastName
     arrivalAt
     status
     createdAt
@@ -57,7 +59,7 @@ query Lounges {
       userId
       firstName
       lastName
-      role
+      roles
     }
   }
 }
@@ -135,9 +137,10 @@ query Staff {
     id
     userId
     loungeId
+    loungeIds
     firstName
     lastName
-    role
+    roles
     rating
   }
 }
@@ -147,23 +150,24 @@ const kCreateStaffMutation = r'''
 mutation CreateStaff(
   $userId: String!
   $password: String!
-  $loungeId: String!
+  $loungeIds: [ID]!
   $firstName: String
   $lastName: String
-  $role: String!
+  $roles: [String]!
 ) {
   createStaff(
     userId: $userId
     password: $password
-    loungeId: $loungeId
+    loungeIds: $loungeIds
     firstName: $firstName
     lastName: $lastName
-    role: $role
+    roles: $roles
   ) {
     id
     userId
-    role
+    roles
     loungeId
+    loungeIds
   }
 }
 ''';
@@ -183,7 +187,7 @@ mutation CreateAdmin(
   ) {
     id
     userId
-    role
+    roles
   }
 }
 ''';
@@ -193,19 +197,26 @@ mutation UpdateStaff(
   $staffId: String!
   $firstName: String
   $lastName: String
-  $role: String
-  $loungeId: String
+  $roles: [String]
+  $loungeIds: [ID]
   $password: String
 ) {
   updateStaff(
     staffId: $staffId
     firstName: $firstName
     lastName: $lastName
-    role: $role
-    loungeId: $loungeId
+    roles: $roles
+    loungeIds: $loungeIds
     password: $password
   ) {
     id
+    userId
+    firstName
+    lastName
+    roles
+    loungeId
+    loungeIds
+    rating
   }
 }
 ''';
