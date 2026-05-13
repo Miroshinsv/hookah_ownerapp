@@ -34,9 +34,13 @@ dependencies:
   # Phone mask
   mask_text_input_formatter: ^2.9.0
 
-  # Notifications & vibration (mobile only)
+  # Notifications & vibration & audio (mobile only)
   flutter_local_notifications: ^18.0.1
   vibration: ^2.0.0
+  audioplayers: ^6.1.0
+
+  # Background service
+  flutter_background_service: ^5.0.9
 
   # Utils
   intl: ^0.20.2

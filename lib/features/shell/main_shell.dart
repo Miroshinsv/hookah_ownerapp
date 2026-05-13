@@ -48,8 +48,6 @@ class _MainShellState extends ConsumerState<MainShell> {
       _Tab('/orders', Icons.receipt_long_outlined, Icons.receipt_long, 'Заказы'),
       if (auth.canManageLounges)
         _Tab('/lounges', Icons.storefront_outlined, Icons.storefront, 'Кальянные'),
-      if (auth.canManageStaff)
-        _Tab('/staff', Icons.people_outline, Icons.people, 'Персонал'),
     ];
 
     final currentIndex =

@@ -227,6 +227,16 @@ mutation DeleteStaff($staffId: String!) {
 }
 ''';
 
+const kSetStaffScheduleMutation = r'''
+mutation SetStaffSchedule($staffId: String!, $loungeId: String!, $schedule: String!) {
+  setStaffSchedule(staffId: $staffId, loungeId: $loungeId, schedule: $schedule) {
+    staffId
+    loungeId
+    schedule
+  }
+}
+''';
+
 const kMessagesQuery = r'''
 query Messages($orderId: String!) {
   messages(orderId: $orderId) {

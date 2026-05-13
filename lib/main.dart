@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'core/background/background_service.dart';
 import 'core/navigation/app_router.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/storage/storage_service.dart';
@@ -10,6 +11,7 @@ import 'features/auth/providers/auth_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService.init();
+  await BackgroundOrderService.initialize();
   final storage = await StorageService.create();
   runApp(
     ProviderScope(

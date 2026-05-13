@@ -108,6 +108,27 @@ class StaffNotifier extends StateNotifier<StaffState> {
     }
   }
 
+  Future<String?> setStaffSchedule(
+      String staffId, String loungeId, String schedule) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kSetStaffScheduleMutation),
+        variables: {
+          'staffId': staffId,
+          'loungeId': loungeId,
+          'schedule': schedule,
+        },
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка сохранения расписания';
+      }
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   Future<String?> deleteStaff(String staffId) async {
     try {
       final result = await _client.mutate(MutationOptions(

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
@@ -23,44 +24,73 @@ class StaffFormScreen extends ConsumerStatefulWidget {
 }
 
 class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
+  static const _days = [
+    ('mon', 'Пн'),
+    ('tue', 'Вт'),
+    ('wed', 'Ср'),
+    ('thu', 'Чт'),
+    ('fri', 'Пт'),
+    ('sat', 'Сб'),
+    ('sun', 'Вс'),
+  ];
+  static const _defaultTime = '10:00-22:00';
+
   final _formKey = GlobalKey<FormState>();
   final _userIdCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _loungeSearchCtrl = TextEditingController();
+  late final Map<String, TextEditingController> _scheduleCtrl;
+  late final Map<String, bool> _workDays;
 
   List<String> _selectedRoles = [];
   List<String> _selectedLoungeIds = [];
   List<LoungeModel> _filteredLounges = [];
+  String? _scheduleSelectedLoungeId;
   bool _loading = false;
+  bool _savingSchedule = false;
   bool _obscurePassword = true;
   String? _generatedPassword;
+  bool _staffLoaded = false;
 
   bool get _isEdit => widget.staffId != null;
 
   @override
   void initState() {
     super.initState();
+    _scheduleCtrl = {
+      for (final d in _days) d.$1: TextEditingController(text: _defaultTime)
+    };
+    _workDays = {for (final d in _days) d.$1: false};
     if (widget.preselectedLoungeId != null) {
       _selectedLoungeIds = [widget.preselectedLoungeId!];
     }
     if (_isEdit) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadStaff());
+      // Try to populate from already-loaded state after first frame
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _populateFromState(ref.read(staffProvider));
+      });
     }
   }
 
-  void _loadStaff() {
-    final staff = ref.read(staffProvider).staff;
-    final m = staff.where((s) => s.id == widget.staffId).firstOrNull;
+  void _populateFromState(StaffState state) {
+    if (_staffLoaded || state.staff.isEmpty) return;
+    final m = state.staff.where((s) => s.id == widget.staffId).firstOrNull;
     if (m == null) return;
-    _firstNameCtrl.text = m.firstName ?? '';
-    _lastNameCtrl.text = m.lastName ?? '';
-    _selectedRoles = m.roles.map((r) => r.apiValue).toList();
-    _selectedLoungeIds = List<String>.from(m.loungeIds.isNotEmpty
+    _staffLoaded = true;
+    final loungeIds = m.loungeIds.isNotEmpty
         ? m.loungeIds
-        : (m.loungeId != null ? [m.loungeId!] : []));
-    setState(() {});
+        : (m.loungeId != null ? [m.loungeId!] : null);
+    setState(() {
+      _firstNameCtrl.text = m.firstName ?? '';
+      _lastNameCtrl.text = m.lastName ?? '';
+      _selectedRoles = m.roles.map((r) => r.apiValue).toList();
+      if (loungeIds != null) {
+        _selectedLoungeIds = List<String>.from(loungeIds);
+      }
+    });
   }
 
   @override
@@ -70,6 +100,9 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _loungeSearchCtrl.dispose();
+    for (final c in _scheduleCtrl.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -147,6 +180,30 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     }
   }
 
+  Future<void> _saveSchedule() async {
+    final loungeId =
+        _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
+    if (loungeId == null || widget.staffId == null) return;
+
+    final map = <String, String>{};
+    for (final d in _days) {
+      if (_workDays[d.$1] == true) {
+        final v = _scheduleCtrl[d.$1]!.text.trim();
+        map[d.$1] = v.isNotEmpty ? v : _defaultTime;
+      }
+    }
+
+    setState(() => _savingSchedule = true);
+    final err = await ref
+        .read(staffProvider.notifier)
+        .setStaffSchedule(widget.staffId!, loungeId, jsonEncode(map));
+    if (!mounted) return;
+    setState(() => _savingSchedule = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(err ?? 'Расписание сохранено')),
+    );
+  }
+
   List<(String, String)> _availableRoles() {
     final auth = ref.read(authProvider);
     final roles = [
@@ -161,13 +218,24 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     return roles.take(3).toList();
   }
 
-  bool get _needsLounge =>
-      _selectedRoles.any((r) => r != 'admin');
+  bool get _needsLounge => _selectedRoles.any((r) => r != 'admin');
 
   @override
   Widget build(BuildContext context) {
+    if (_isEdit) {
+      // Keep staffProvider alive (autoDispose) and react to data loading
+      final staffState = ref.watch(staffProvider);
+      ref.listen<StaffState>(staffProvider, (_, next) => _populateFromState(next));
+      // Handle initial state if already loaded before first listen fires
+      if (!_staffLoaded && !staffState.loading) {
+        _populateFromState(staffState);
+      }
+    }
+
     final lounges = ref.watch(loungesProvider).lounges;
     final roles = _availableRoles();
+    final scheduleLounge =
+        _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
 
     return Scaffold(
       appBar: AppBar(
@@ -181,7 +249,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
             if (!_isEdit) ...[
               TextFormField(
                 controller: _userIdCtrl,
-                decoration: const InputDecoration(labelText: 'Логин (userId) *'),
+                decoration:
+                    const InputDecoration(labelText: 'Логин (userId) *'),
                 validator: (v) =>
                     v == null || v.trim().isEmpty ? 'Обязательное поле' : null,
               ),
@@ -201,8 +270,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                               : Icons.visibility,
                           color: AppColors.muted,
                         ),
-                        onPressed: () =>
-                            setState(() => _obscurePassword = !_obscurePassword),
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
                       ),
                     ),
                     obscureText: _obscurePassword,
@@ -227,7 +296,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.surface2,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -253,12 +322,14 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.copy, size: 18, color: AppColors.muted),
+                      icon: const Icon(Icons.copy,
+                          size: 18, color: AppColors.muted),
                       onPressed: () {
                         Clipboard.setData(
                             ClipboardData(text: _generatedPassword!));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Пароль скопирован')),
+                          const SnackBar(
+                              content: Text('Пароль скопирован')),
                         );
                       },
                     ),
@@ -320,12 +391,16 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   spacing: 8,
                   runSpacing: 4,
                   children: _selectedLoungeIds.map((id) {
-                    final lounge = lounges.where((l) => l.id == id).firstOrNull;
+                    final lounge =
+                        lounges.where((l) => l.id == id).firstOrNull;
                     return Chip(
                       label: Text(lounge?.name ?? id),
                       deleteIcon: const Icon(Icons.close, size: 16),
                       onDeleted: () => setState(() {
                         _selectedLoungeIds.remove(id);
+                        if (_scheduleSelectedLoungeId == id) {
+                          _scheduleSelectedLoungeId = null;
+                        }
                         _filteredLounges = [];
                       }),
                     );
@@ -353,9 +428,10 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                             .toList();
                   });
                 },
-                validator: (_) => _needsLounge && _selectedLoungeIds.isEmpty
-                    ? 'Выберите кальянную'
-                    : null,
+                validator: (_) =>
+                    _needsLounge && _selectedLoungeIds.isEmpty
+                        ? 'Выберите кальянную'
+                        : null,
               ),
               if (_filteredLounges.isNotEmpty)
                 Container(
@@ -374,7 +450,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                       return ListTile(
                         dense: true,
                         title: Text(l.name,
-                            style: const TextStyle(color: AppColors.text)),
+                            style:
+                                const TextStyle(color: AppColors.text)),
                         onTap: () => setState(() {
                           _selectedLoungeIds.add(l.id);
                           _loungeSearchCtrl.clear();
@@ -390,6 +467,115 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   child: Text('Нет кальянных',
                       style: TextStyle(color: AppColors.muted)),
                 ),
+            ],
+            if (_isEdit) ...[
+              const Divider(color: AppColors.border, height: 32),
+              const Text(
+                'Расписание',
+                style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (_selectedLoungeIds.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Укажите кальянную выше, чтобы сохранить расписание',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                )
+              else ...[
+                if (_selectedLoungeIds.length > 1) ...[
+                  const Text(
+                    'Кальянная',
+                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  DropdownButtonFormField<String>(
+                    initialValue: scheduleLounge,
+                    dropdownColor: AppColors.surface2,
+                    style:
+                        const TextStyle(color: AppColors.text, fontSize: 14),
+                    decoration: const InputDecoration(isDense: true),
+                    onChanged: (v) =>
+                        setState(() => _scheduleSelectedLoungeId = v),
+                    items: _selectedLoungeIds.map((id) {
+                      final lounge =
+                          lounges.where((l) => l.id == id).firstOrNull;
+                      return DropdownMenuItem(
+                        value: id,
+                        child: Text(lounge?.name ?? id),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                const Text(
+                  'Укажите время работы для каждого дня',
+                  style: TextStyle(color: AppColors.muted, fontSize: 11),
+                ),
+                const SizedBox(height: 10),
+                ..._days.map((d) {
+                  final isWorking = _workDays[d.$1] ?? false;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 28,
+                          child: Text(
+                            d.$2,
+                            style: const TextStyle(
+                                color: AppColors.muted, fontSize: 13),
+                          ),
+                        ),
+                        Switch(
+                          value: isWorking,
+                          activeThumbColor: AppColors.gold,
+                          onChanged: (on) => setState(() {
+                            _workDays[d.$1] = on;
+                            if (on &&
+                                _scheduleCtrl[d.$1]!.text.trim().isEmpty) {
+                              _scheduleCtrl[d.$1]!.text = _defaultTime;
+                            }
+                          }),
+                        ),
+                        if (isWorking)
+                          Expanded(
+                            child: TextFormField(
+                              controller: _scheduleCtrl[d.$1],
+                              decoration: const InputDecoration(
+                                hintText: '10:00-22:00',
+                                isDense: true,
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                              ),
+                              style: const TextStyle(
+                                  color: AppColors.text, fontSize: 13),
+                            ),
+                          )
+                        else
+                          const Expanded(
+                            child: Text(
+                              'выходной',
+                              style: TextStyle(
+                                  color: AppColors.muted, fontSize: 13),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 4),
+                LoadingButton(
+                  label: 'Сохранить расписание',
+                  onPressed: scheduleLounge != null ? _saveSchedule : null,
+                  loading: _savingSchedule,
+                ),
+              ],
             ],
             const SizedBox(height: 32),
             LoadingButton(

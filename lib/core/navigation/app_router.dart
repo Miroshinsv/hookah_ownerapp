@@ -11,7 +11,6 @@ import '../../features/lounges/screens/lounges_screen.dart';
 import '../../features/orders/screens/orders_screen.dart';
 import '../../features/shell/main_shell.dart';
 import '../../features/staff/screens/staff_form_screen.dart';
-import '../../features/staff/screens/staff_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authProvider);
@@ -48,10 +47,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/lounges',
             builder: (ctx, _) => const LoungesScreen(),
-          ),
-          GoRoute(
-            path: '/staff',
-            builder: (ctx, _) => const StaffScreen(),
           ),
         ],
       ),

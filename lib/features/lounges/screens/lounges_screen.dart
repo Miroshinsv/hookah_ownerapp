@@ -264,7 +264,10 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
       MaterialPageRoute(
         builder: (_) => UncontrolledProviderScope(
           container: ProviderScope.containerOf(context),
-          child: StaffFormScreen(staffId: staff.id),
+          child: StaffFormScreen(
+            staffId: staff.id,
+            preselectedLoungeId: widget.lounge.id,
+          ),
         ),
       ),
     ).then((_) {
