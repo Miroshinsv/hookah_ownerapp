@@ -11,6 +11,7 @@ import '../../../shared/models/order_model.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../chat/providers/unread_messages_provider.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
 import '../providers/orders_provider.dart';
 
@@ -122,19 +123,6 @@ class _OrderCard extends ConsumerStatefulWidget {
 
 class _OrderCardState extends ConsumerState<_OrderCard> {
   String? _actionLoading;
-  bool _unread = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkUnread();
-  }
-
-  Future<void> _checkUnread() async {
-    final storage = ref.read(storageServiceProvider);
-    final ids = storage.unreadOrderIds;
-    if (mounted) setState(() => _unread = ids.contains(widget.order.id));
-  }
 
   Future<void> _changeStatus(OrderStatus status) async {
     setState(() => _actionLoading = status.apiValue);
@@ -185,6 +173,7 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
   Widget build(BuildContext context) {
     final order = widget.order;
     final df = DateFormat('dd.MM HH:mm');
+    final unread = ref.watch(unreadMessagesProvider).contains(order.id);
 
     final isNew = order.status == OrderStatus.newOrder;
     return Container(
@@ -271,13 +260,12 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
                       loading: false,
                       onTap: () {
                         ref
-                            .read(storageServiceProvider)
-                            .markOrderRead(order.id);
-                        setState(() => _unread = false);
+                            .read(unreadMessagesProvider.notifier)
+                            .markRead(order.id);
                         context.push('/chat/${order.id}');
                       },
                     ),
-                    if (_unread)
+                    if (unread)
                       Positioned(
                         right: 0,
                         top: 0,

@@ -7,6 +7,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/update/update_dialog.dart';
 import '../../core/update/update_service.dart';
 import '../auth/providers/auth_provider.dart';
+import '../chat/providers/unread_messages_provider.dart';
 import '../dashboard/providers/dashboard_provider.dart';
 import '../orders/providers/orders_provider.dart';
 
@@ -20,11 +21,26 @@ class MainShell extends ConsumerStatefulWidget {
   ConsumerState<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends ConsumerState<MainShell> {
+class _MainShellState extends ConsumerState<MainShell>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdate());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      ref.read(unreadMessagesProvider.notifier).refreshFromStorage();
+    }
   }
 
   Future<void> _checkUpdate() async {
@@ -39,9 +55,10 @@ class _MainShellState extends ConsumerState<MainShell> {
     final auth = ref.watch(authProvider);
 
     // Keep providers alive for the entire shell lifetime so polling and
-    // WS subscription never stop between tab switches.
+    // WS subscriptions never stop between tab switches.
     ref.watch(dashboardProvider);
     ref.watch(ordersProvider);
+    ref.watch(unreadMessagesProvider);
 
     final tabs = [
       _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),

@@ -64,4 +64,9 @@ class StorageService {
     final s = _prefs.getString('$_lastReadPrefix$orderId');
     return s != null ? DateTime.tryParse(s) : null;
   }
+
+  /// Reloads SharedPreferences from the platform store.
+  /// Call this after the background service may have written unread state
+  /// in a separate isolate.
+  Future<void> reload() => _prefs.reload();
 }

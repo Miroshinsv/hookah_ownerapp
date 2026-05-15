@@ -14,7 +14,12 @@ import '../config/app_config.dart';
 const _tokenKey = 'auth_token';
 const _channelId = 'orders_v2';
 const _channelName = 'Заказы';
+const _msgChannelId = 'chat_messages';
+const _msgChannelName = 'Сообщения чата';
 const _foregroundNotifId = 88888;
+const _bgLastMsgTsPrefix = 'bg_last_msg_ts_';
+const _unreadKey = 'unread_order_ids';
+const _staffRoles = {'admin', 'owner', 'hookah_master', 'hostess', 'waiter', 'staff'};
 
 // In-memory set of order IDs already notified within this service lifetime.
 var _seenIds = <String>{};
@@ -84,19 +89,31 @@ void _onStart(ServiceInstance service) async {
     }
   }
 
-  await plugin
+  final androidPlugin = plugin
       .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-      ?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          _channelId,
-          _channelName,
-          description: 'Уведомления о новых заказах',
-          importance: Importance.max,
-          playSound: true,
-          enableVibration: true,
-        ),
-      );
+          AndroidFlutterLocalNotificationsPlugin>();
+
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      _channelId,
+      _channelName,
+      description: 'Уведомления о новых заказах',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    ),
+  );
+
+  await androidPlugin?.createNotificationChannel(
+    const AndroidNotificationChannel(
+      _msgChannelId,
+      _msgChannelName,
+      description: 'Уведомления о новых сообщениях в чате',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    ),
+  );
 
   if (service is AndroidServiceInstance) {
     service.on('stopService').listen((_) => service.stopSelf());
@@ -110,8 +127,11 @@ void _onStart(ServiceInstance service) async {
 
   // Check immediately, then every 30 seconds.
   await _checkNewOrders(plugin);
-  Timer.periodic(
-      const Duration(seconds: 30), (_) => _checkNewOrders(plugin));
+  await _checkNewMessages(plugin);
+  Timer.periodic(const Duration(seconds: 30), (_) async {
+    await _checkNewOrders(plugin);
+    await _checkNewMessages(plugin);
+  });
 }
 
 /// iOS background fetch entry point.
@@ -207,6 +227,138 @@ Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
     }
   } catch (e) {
     debugPrint('BackgroundService._checkNewOrders: $e');
+  }
+}
+
+Future<void> _checkNewMessages(FlutterLocalNotificationsPlugin plugin) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString(_tokenKey);
+    if (token == null || token.isEmpty) return;
+
+    final response = await http
+        .post(
+          Uri.parse(AppConfig.graphqlUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'query': '{ orders(limit: 100) { id status } }',
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+
+    if (response.statusCode != 200) return;
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['errors'] != null) return;
+
+    final activeOrders = (decoded['data']?['orders'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((o) {
+          final s = o['status'] as String?;
+          return s == 'new' || s == 'in_progress';
+        })
+        .toList();
+
+    for (final order in activeOrders) {
+      await _checkOrderMessages(plugin, prefs, token, order['id'] as String);
+    }
+  } catch (e) {
+    debugPrint('BackgroundService._checkNewMessages: $e');
+  }
+}
+
+Future<void> _checkOrderMessages(
+  FlutterLocalNotificationsPlugin plugin,
+  SharedPreferences prefs,
+  String token,
+  String orderId,
+) async {
+  try {
+    final response = await http
+        .post(
+          Uri.parse(AppConfig.graphqlUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'query':
+                '{ messages(orderId: "$orderId") { id senderRole text createdAt } }',
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) return;
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['errors'] != null) return;
+
+    final messages = (decoded['data']?['messages'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (messages.isEmpty) return;
+
+    final tsKey = '$_bgLastMsgTsPrefix$orderId';
+    final lastSeenStr = prefs.getString(tsKey);
+    final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+
+    // Sort to find latest timestamp
+    final times = messages
+        .map((m) => DateTime.tryParse(m['createdAt'] as String? ?? ''))
+        .whereType<DateTime>()
+        .toList()
+      ..sort();
+
+    // Always update last-seen to the latest message timestamp
+    if (times.isNotEmpty) {
+      await prefs.setString(tsKey, times.last.toIso8601String());
+    }
+
+    // On first check (no stored timestamp), just record state without notifying
+    if (lastSeen == null) return;
+
+    // Find new non-staff messages
+    final newClientMessages = messages.where((m) {
+      final role = m['senderRole'] as String?;
+      if (role != null && _staffRoles.contains(role)) return false;
+      final ts = DateTime.tryParse(m['createdAt'] as String? ?? '');
+      return ts != null && ts.isAfter(lastSeen);
+    }).toList();
+
+    if (newClientMessages.isEmpty) return;
+
+    // Mark order as unread in SharedPreferences so the foreground app
+    // picks it up on resume.
+    final unreadList = prefs.getStringList(_unreadKey)?.toSet() ?? {};
+    unreadList.add(orderId);
+    await prefs.setStringList(_unreadKey, unreadList.toList());
+
+    // Show one notification with the latest message text
+    final latest = newClientMessages.last;
+    final text = latest['text'] as String? ?? '';
+    await plugin.show(
+      orderId.hashCode ^ 0x7F000,
+      'Новое сообщение в чате',
+      text.isNotEmpty ? text : 'Сообщение от клиента',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _msgChannelId,
+          _msgChannelName,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          icon: _notifIcon,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+          presentBadge: true,
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('BackgroundService._checkOrderMessages($orderId): $e');
   }
 }
 

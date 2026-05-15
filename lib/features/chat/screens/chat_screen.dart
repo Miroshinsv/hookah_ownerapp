@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/message_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/unread_messages_provider.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   final String orderId;
@@ -34,9 +35,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  Future<void> _markRead() async {
-    final storage = ref.read(storageServiceProvider);
-    await storage.markOrderRead(widget.orderId);
+  Future<void> _markRead() {
+    return ref
+        .read(unreadMessagesProvider.notifier)
+        .markRead(widget.orderId);
   }
 
   void _startSubscription() {
