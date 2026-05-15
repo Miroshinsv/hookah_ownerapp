@@ -7,6 +7,7 @@ class StorageService {
   static const _userIdKey = 'auth_user_id';
   static const _unreadKey = 'unread_order_ids';
   static const _lastReadPrefix = 'last_read_';
+  static const _notifMsgTsPrefix = 'fg_notif_msg_ts_';
 
   final SharedPreferences _prefs;
 
@@ -64,6 +65,14 @@ class StorageService {
     final s = _prefs.getString('$_lastReadPrefix$orderId');
     return s != null ? DateTime.tryParse(s) : null;
   }
+
+  DateTime? notifMsgTs(String orderId) {
+    final s = _prefs.getString('$_notifMsgTsPrefix$orderId');
+    return s != null ? DateTime.tryParse(s) : null;
+  }
+
+  Future<void> setNotifMsgTs(String orderId, DateTime ts) =>
+      _prefs.setString('$_notifMsgTsPrefix$orderId', ts.toIso8601String());
 
   /// Reloads SharedPreferences from the platform store.
   /// Call this after the background service may have written unread state
