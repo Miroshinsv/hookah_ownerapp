@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/notifications/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update/update_dialog.dart';
 import '../../core/update/update_service.dart';
@@ -23,15 +26,22 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell>
     with WidgetsBindingObserver {
+  StreamSubscription<String>? _notifSub;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkUpdate();
+      _checkPendingNotification();
+    });
+    _notifSub = NotificationService.chatOpenStream.listen(_openChat);
   }
 
   @override
   void dispose() {
+    _notifSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -50,6 +60,17 @@ class _MainShellState extends ConsumerState<MainShell>
     }
   }
 
+  Future<void> _checkPendingNotification() async {
+    final orderId = await NotificationService.getPendingChatOpen();
+    if (orderId != null && mounted) {
+      context.push('/chat/$orderId');
+    }
+  }
+
+  void _openChat(String orderId) {
+    if (mounted) context.push('/chat/$orderId');
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
@@ -58,7 +79,7 @@ class _MainShellState extends ConsumerState<MainShell>
     // WS subscriptions never stop between tab switches.
     ref.watch(dashboardProvider);
     ref.watch(ordersProvider);
-    ref.watch(unreadMessagesProvider);
+    final unreadCount = ref.watch(unreadMessagesProvider).length;
 
     final tabs = [
       _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),
@@ -91,13 +112,18 @@ class _MainShellState extends ConsumerState<MainShell>
         child: BottomNavigationBar(
           currentIndex: currentIndex,
           onTap: (i) => context.go(tabs[i].path),
-          items: tabs
-              .map((t) => BottomNavigationBarItem(
-                    icon: Icon(t.icon),
-                    activeIcon: Icon(t.activeIcon),
-                    label: t.label,
-                  ))
-              .toList(),
+          items: tabs.map((t) {
+            final showBadge = t.path == '/orders' && unreadCount > 0;
+            return BottomNavigationBarItem(
+              icon: showBadge
+                  ? Badge.count(count: unreadCount, child: Icon(t.icon))
+                  : Icon(t.icon),
+              activeIcon: showBadge
+                  ? Badge.count(count: unreadCount, child: Icon(t.activeIcon))
+                  : Icon(t.activeIcon),
+              label: t.label,
+            );
+          }).toList(),
         ),
       ),
     );

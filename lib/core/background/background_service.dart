@@ -185,6 +185,7 @@ Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
 
       _seenIds.add(id);
 
+      final shortId = id.substring(0, id.length.clamp(0, 8));
       final name = (order['firstName'] as String? ?? '').trim();
       final flavor = (order['flavor'] as String? ?? '').trim();
       final body = [
@@ -194,7 +195,7 @@ Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
 
       await plugin.show(
         id.hashCode,
-        'Новый заказ',
+        'Новый заказ #$shortId',
         body.isNotEmpty ? body : 'Поступил новый заказ',
         NotificationDetails(
           android: AndroidNotificationDetails(
@@ -336,9 +337,10 @@ Future<void> _checkOrderMessages(
     // Show one notification with the latest message text
     final latest = newClientMessages.last;
     final text = latest['text'] as String? ?? '';
+    final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
     await plugin.show(
       orderId.hashCode ^ 0x7F000,
-      'Новое сообщение в чате',
+      'Новое сообщение #$shortId',
       text.isNotEmpty ? text : 'Сообщение от клиента',
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -356,6 +358,7 @@ Future<void> _checkOrderMessages(
           presentBadge: true,
         ),
       ),
+      payload: 'chat:$orderId',
     );
   } catch (e) {
     debugPrint('BackgroundService._checkOrderMessages($orderId): $e');

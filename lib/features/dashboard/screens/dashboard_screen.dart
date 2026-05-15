@@ -8,6 +8,7 @@ import '../../../shared/models/order_model.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../chat/providers/unread_messages_provider.dart';
 import '../providers/dashboard_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -218,20 +219,6 @@ class _DashboardOrderTile extends ConsumerStatefulWidget {
 
 class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
   String? _actionLoading;
-  bool _unread = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _checkUnread();
-  }
-
-  Future<void> _checkUnread() async {
-    final storage = ref.read(storageServiceProvider);
-    if (mounted) {
-      setState(() => _unread = storage.unreadOrderIds.contains(widget.order.id));
-    }
-  }
 
   Future<void> _changeStatus(OrderStatus status) async {
     setState(() => _actionLoading = status.apiValue);
@@ -285,6 +272,7 @@ class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
   Widget build(BuildContext context) {
     final order = widget.order;
     final isNew = order.status == OrderStatus.newOrder;
+    final unread = ref.watch(unreadMessagesProvider).contains(order.id);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -379,13 +367,12 @@ class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
                     loading: false,
                     onTap: () {
                       ref
-                          .read(storageServiceProvider)
-                          .markOrderRead(order.id);
-                      setState(() => _unread = false);
+                          .read(unreadMessagesProvider.notifier)
+                          .markRead(order.id);
                       context.push('/chat/${order.id}');
                     },
                   ),
-                  if (_unread)
+                  if (unread)
                     Positioned(
                       right: 0,
                       top: 0,

@@ -9,6 +9,30 @@ class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
 
+  static final _chatOpenController = StreamController<String>.broadcast();
+  static Stream<String> get chatOpenStream => _chatOpenController.stream;
+
+  static void _onNotificationTap(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload != null && payload.startsWith('chat:')) {
+      _chatOpenController.add(payload.substring(5));
+    }
+  }
+
+  static Future<String?> getPendingChatOpen() async {
+    if (!_initialized) return null;
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp == true) {
+        final payload = details?.notificationResponse?.payload;
+        if (payload != null && payload.startsWith('chat:')) {
+          return payload.substring(5);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // Custom icon if available, fallback to launcher icon.
   static const _customIcon   = '@drawable/ic_notification';
   static const _fallbackIcon = '@mipmap/ic_launcher';
@@ -49,6 +73,7 @@ class NotificationService {
     );
     await _plugin.initialize(
       InitializationSettings(android: androidSettings, iOS: iosSettings),
+      onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
     final androidPlugin = _plugin
@@ -83,8 +108,8 @@ class NotificationService {
       final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
       await _plugin.show(
         orderId.hashCode ^ 0x8000,
-        'Новое сообщение',
-        text.isNotEmpty ? text : 'Сообщение в заказе #$shortId',
+        'Новое сообщение #$shortId',
+        text.isNotEmpty ? text : 'Сообщение от клиента',
         NotificationDetails(
           android: AndroidNotificationDetails(
             _msgChannelId, _msgChannelName,
@@ -100,6 +125,7 @@ class NotificationService {
             presentBadge: true,
           ),
         ),
+        payload: 'chat:$orderId',
       );
     } catch (e) {
       debugPrint('NotificationService.showNewMessage: $e');
@@ -112,8 +138,8 @@ class NotificationService {
       final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
       await _plugin.show(
         orderId.hashCode,
-        'Новый заказ',
-        'Поступил новый заказ #$shortId',
+        'Новый заказ #$shortId',
+        'Поступил новый заказ',
         NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId, _channelName,
