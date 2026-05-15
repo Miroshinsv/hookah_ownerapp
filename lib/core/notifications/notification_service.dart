@@ -14,9 +14,11 @@ class NotificationService {
   static const _fallbackIcon = '@mipmap/ic_launcher';
   static String _notifIcon   = _customIcon;
 
-  static const _channelId    = 'orders_v2';
-  static const _channelName  = 'Заказы';
-  static const _alertNotifId = 9999;
+  static const _channelId     = 'orders_v2';
+  static const _channelName   = 'Заказы';
+  static const _msgChannelId  = 'chat_messages';
+  static const _msgChannelName = 'Сообщения чата';
+  static const _alertNotifId  = 9999;
 
   static Timer? _alertTimer;
   static bool   _alertActive = false;
@@ -63,6 +65,45 @@ class NotificationService {
         enableVibration: true,
       ),
     );
+    await androidPlugin?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _msgChannelId,
+        _msgChannelName,
+        description: 'Уведомления о новых сообщениях в чате',
+        importance: Importance.high,
+        playSound: true,
+        enableVibration: true,
+      ),
+    );
+  }
+
+  static Future<void> showNewMessage(String orderId, String text) async {
+    if (!_initialized) return;
+    try {
+      final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
+      await _plugin.show(
+        orderId.hashCode ^ 0x8000,
+        'Новое сообщение',
+        text.isNotEmpty ? text : 'Сообщение в заказе #$shortId',
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _msgChannelId, _msgChannelName,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            icon: _notifIcon,
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+            presentBadge: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('NotificationService.showNewMessage: $e');
+    }
   }
 
   static Future<void> showNewOrder(String orderId) async {

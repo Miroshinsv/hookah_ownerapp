@@ -24,14 +24,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _scrollCtrl = ScrollController();
   final _textCtrl = TextEditingController();
   StreamSubscription? _sub;
+  Timer? _pollTimer;
   bool _sending = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activeChatOrderIdProvider.notifier).state = widget.orderId;
       _markRead();
       _startSubscription();
+      _startPolling();
     });
   }
 
@@ -41,6 +44,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .markRead(widget.orderId);
   }
 
+  // WebSocket subscription — instant delivery when it works.
   void _startSubscription() {
     final wsClient = ref.read(wsClientProvider);
     _sub = wsClient.subscribe(kNewMessageSubscription).listen((payload) {
@@ -56,7 +60,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           createdAt: DateTime.now(),
         );
         ref.read(chatProviderFamily(widget.orderId).notifier).addMessage(msg);
-        _scrollToBottom();
+        _markRead();
+      }
+    });
+  }
+
+  // Polling fallback — guarantees messages arrive even if WS subscription
+  // doesn't fire (e.g. server sends events to only one subscriber).
+  void _startPolling() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) {
+        ref.read(chatProviderFamily(widget.orderId).notifier).fetch();
       }
     });
   }
@@ -98,7 +112,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
+    if (ref.read(activeChatOrderIdProvider) == widget.orderId) {
+      ref.read(activeChatOrderIdProvider.notifier).state = null;
+    }
     _sub?.cancel();
+    _pollTimer?.cancel();
     _scrollCtrl.dispose();
     _textCtrl.dispose();
     super.dispose();
@@ -109,6 +127,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final state = ref.watch(chatProviderFamily(widget.orderId));
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId;
+
+    // Auto-scroll and mark read when new messages arrive (subscription or poll).
+    ref.listen(chatProviderFamily(widget.orderId), (prev, next) {
+      final prevLast = prev?.messages.lastOrNull?.id;
+      final nextLast = next.messages.lastOrNull?.id;
+      if (nextLast != null && nextLast != prevLast) {
+        _scrollToBottom();
+        _markRead();
+      }
+    });
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
