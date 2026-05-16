@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "100517014801",
+    "project_id": "hookahorder-75e32",
+    "storage_bucket": "hookahorder-75e32.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:100517014801:android:05a25b5842f605d3fb70b0",
+        "android_client_info": {
+          "package_name": "ru.hookahorder.hookah_admin"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiIw6nta_xLT_suXhXgjK7fpquPVzw9AU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:100517014801:android:afeb98bed73c6bccfb70b0",
+        "android_client_info": {
+          "package_name": "ru.hookahorder.user_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAiIw6nta_xLT_suXhXgjK7fpquPVzw9AU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

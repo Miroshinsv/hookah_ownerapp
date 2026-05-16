@@ -1,4 +1,4 @@
-package com.hookah.hookah_admin
+package ru.hookahorder.hookah_admin
 
 import android.content.Intent
 import android.net.Uri
@@ -54,6 +54,6 @@ class MainActivity : FlutterActivity() {
     }
 
     companion object {
-        private const val CHANNEL = "com.hookah.hookah_admin/apk_installer"
+        private const val CHANNEL = "ru.hookahorder.hookah_admin/apk_installer"
     }
 }
