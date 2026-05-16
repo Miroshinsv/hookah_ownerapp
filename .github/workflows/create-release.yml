@@ -270,6 +270,8 @@ jobs:
           mv dist/android/app-release.apk           "hookah-admin-${TAG}.apk"
           mv dist/android/app-release.aab           "hookah-admin-${TAG}.aab"
           mv dist/windows/hookah-admin-windows.zip  "hookah-admin-windows-${TAG}.zip"
+          cp "hookah-admin-${TAG}.apk"              "hookah-admin-latest.apk"
+          cp "hookah-admin-windows-${TAG}.zip"      "hookah-admin-windows-latest.zip"
 
       - name: Опубликовать GitHub Release
         uses: softprops/action-gh-release@v2
@@ -282,3 +284,5 @@ jobs:
             hookah-admin-${{ needs.prepare.outputs.tag }}.apk
             hookah-admin-${{ needs.prepare.outputs.tag }}.aab
             hookah-admin-windows-${{ needs.prepare.outputs.tag }}.zip
+            hookah-admin-latest.apk
+            hookah-admin-windows-latest.zip
