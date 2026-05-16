@@ -1,31 +1,35 @@
-enum OrderStatus { newOrder, inProgress, completed, canceled }
+enum OrderStatus { newOrder, inProgress, completed, canceledByStaff, canceledByUser }
 
 extension OrderStatusX on OrderStatus {
   String get apiValue => switch (this) {
         OrderStatus.newOrder => 'new',
         OrderStatus.inProgress => 'in_progress',
         OrderStatus.completed => 'completed',
-        OrderStatus.canceled => 'canceled',
+        OrderStatus.canceledByStaff => 'canceled_by_staff',
+        OrderStatus.canceledByUser => 'canceled_by_user',
       };
 
   String get label => switch (this) {
         OrderStatus.newOrder => 'Новый',
         OrderStatus.inProgress => 'В работе',
         OrderStatus.completed => 'Завершён',
-        OrderStatus.canceled => 'Отменён',
+        OrderStatus.canceledByStaff => 'Отменён персоналом',
+        OrderStatus.canceledByUser => 'Отменён посетителем',
       };
 
   static OrderStatus fromString(String v) => switch (v) {
         'new' => OrderStatus.newOrder,
         'in_progress' => OrderStatus.inProgress,
         'completed' => OrderStatus.completed,
-        'canceled' => OrderStatus.canceled,
+        'canceled_by_staff' => OrderStatus.canceledByStaff,
+        'canceled_by_user' => OrderStatus.canceledByUser,
+        'canceled' => OrderStatus.canceledByStaff,
         _ => OrderStatus.newOrder,
       };
 
   List<OrderStatus> get nextStatuses => switch (this) {
-        OrderStatus.newOrder => [OrderStatus.inProgress, OrderStatus.canceled],
-        OrderStatus.inProgress => [OrderStatus.completed, OrderStatus.canceled],
+        OrderStatus.newOrder => [OrderStatus.inProgress, OrderStatus.canceledByStaff],
+        OrderStatus.inProgress => [OrderStatus.completed, OrderStatus.canceledByStaff],
         _ => [],
       };
 }

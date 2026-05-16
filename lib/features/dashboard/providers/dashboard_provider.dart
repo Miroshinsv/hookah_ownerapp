@@ -22,18 +22,32 @@ class DashboardState {
     this.knownIds = const {},
   });
 
-  Map<OrderStatus, int> get counts {
-    final m = <OrderStatus, int>{};
-    for (final s in OrderStatus.values) {
-      m[s] = 0;
-    }
-    for (final o in orders) {
+  Map<OrderStatus, int> _countsFor(List<OrderModel> subset) {
+    final m = {for (final s in OrderStatus.values) s: 0};
+    for (final o in subset) {
       m[o.status] = (m[o.status] ?? 0) + 1;
     }
     return m;
   }
 
-  List<OrderModel> get recent => orders.take(20).toList();
+  Map<OrderStatus, int> get todayCounts {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, now.day);
+    return _countsFor(orders.where((o) => o.createdAt.isAfter(start)).toList());
+  }
+
+  Map<OrderStatus, int> get weekCounts {
+    final now = DateTime.now();
+    final start = now.subtract(Duration(days: now.weekday - 1));
+    final weekStart = DateTime(start.year, start.month, start.day);
+    return _countsFor(orders.where((o) => o.createdAt.isAfter(weekStart)).toList());
+  }
+
+  Map<OrderStatus, int> get monthCounts {
+    final now = DateTime.now();
+    final start = DateTime(now.year, now.month, 1);
+    return _countsFor(orders.where((o) => o.createdAt.isAfter(start)).toList());
+  }
 
   DashboardState copyWith({
     List<OrderModel>? orders,
@@ -83,7 +97,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
 
       final newIds = list.map((o) => o.id).toSet();
 
-      // Notify about orders that appeared since last fetch.
       if (state.knownIds.isNotEmpty) {
         final appeared = newIds.difference(state.knownIds);
         for (final id in appeared) {
@@ -171,7 +184,6 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     final status = OrderStatusX.fromString(statusStr);
 
     if (!state.knownIds.contains(id)) {
-      // Unknown order — fetch to get full data.
       fetch();
       return;
     }
@@ -190,9 +202,10 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
       OrderStatus.newOrder: 0,
       OrderStatus.inProgress: 1,
       OrderStatus.completed: 2,
-      OrderStatus.canceled: 3,
+      OrderStatus.canceledByStaff: 3,
+      OrderStatus.canceledByUser: 4,
     };
-    final p = (priority[a.status] ?? 4).compareTo(priority[b.status] ?? 4);
+    final p = (priority[a.status] ?? 5).compareTo(priority[b.status] ?? 5);
     if (p != 0) return p;
     return b.createdAt.compareTo(a.createdAt);
   }

@@ -11,6 +11,7 @@ class OrdersState {
   final bool loading;
   final String? error;
   final int page;
+  final bool hideCompleted;
 
   static const pageSize = 25;
 
@@ -19,21 +20,32 @@ class OrdersState {
     this.loading = false,
     this.error,
     this.page = 0,
+    this.hideCompleted = false,
   });
 
+  List<OrderModel> get visibleOrders => hideCompleted
+      ? orders
+          .where((o) =>
+              o.status == OrderStatus.newOrder ||
+              o.status == OrderStatus.inProgress)
+          .toList()
+      : orders;
+
   List<OrderModel> get currentPage {
+    final visible = visibleOrders;
     final start = page * pageSize;
-    final end = (start + pageSize).clamp(0, orders.length);
-    return start < orders.length ? orders.sublist(start, end) : [];
+    final end = (start + pageSize).clamp(0, visible.length);
+    return start < visible.length ? visible.sublist(start, end) : [];
   }
 
-  int get totalPages => (orders.length / pageSize).ceil().clamp(1, 999);
+  int get totalPages => (visibleOrders.length / pageSize).ceil().clamp(1, 999);
 
   OrdersState copyWith({
     List<OrderModel>? orders,
     bool? loading,
     String? error,
     int? page,
+    bool? hideCompleted,
     bool clearError = false,
   }) =>
       OrdersState(
@@ -41,6 +53,7 @@ class OrdersState {
         loading: loading ?? this.loading,
         error: clearError ? null : (error ?? this.error),
         page: page ?? this.page,
+        hideCompleted: hideCompleted ?? this.hideCompleted,
       );
 }
 
@@ -121,14 +134,20 @@ class OrdersNotifier extends StateNotifier<OrdersState> {
 
   void setPage(int p) => state = state.copyWith(page: p);
 
+  void toggleHideCompleted() => state = state.copyWith(
+        hideCompleted: !state.hideCompleted,
+        page: 0,
+      );
+
   static int _sortOrders(OrderModel a, OrderModel b) {
     const priority = {
       OrderStatus.newOrder: 0,
       OrderStatus.inProgress: 1,
       OrderStatus.completed: 2,
-      OrderStatus.canceled: 3,
+      OrderStatus.canceledByStaff: 3,
+      OrderStatus.canceledByUser: 4,
     };
-    final p = (priority[a.status] ?? 4).compareTo(priority[b.status] ?? 4);
+    final p = (priority[a.status] ?? 5).compareTo(priority[b.status] ?? 5);
     if (p != 0) return p;
     return b.createdAt.compareTo(a.createdAt);
   }

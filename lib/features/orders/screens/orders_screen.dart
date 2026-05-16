@@ -59,8 +59,16 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-            'Заказы${state.orders.isEmpty ? '' : ' (${state.orders.length})'}'),
+            'Заказы${state.visibleOrders.isEmpty ? '' : ' (${state.visibleOrders.length})'}'),
         actions: [
+          IconButton(
+            tooltip: state.hideCompleted ? 'Показать завершённые' : 'Скрыть завершённые',
+            icon: Icon(
+              state.hideCompleted ? Icons.visibility_off : Icons.visibility,
+              color: state.hideCompleted ? AppColors.gold : null,
+            ),
+            onPressed: () => ref.read(ordersProvider.notifier).toggleHideCompleted(),
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () => ref.read(dashboardProvider.notifier).fetch(),
@@ -172,7 +180,7 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
-    final df = DateFormat('dd.MM HH:mm');
+    final df = DateFormat('dd.MM.yyyy HH:mm');
     final unread = ref.watch(unreadMessagesProvider).contains(order.id);
 
     final isNew = order.status == OrderStatus.newOrder;
@@ -291,7 +299,7 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
   String _statusActionLabel(OrderStatus s) => switch (s) {
         OrderStatus.inProgress => 'В работу',
         OrderStatus.completed => 'Завершить',
-        OrderStatus.canceled => 'Отменить',
+        OrderStatus.canceledByStaff => 'Отменить',
         _ => s.label,
       };
 
@@ -299,7 +307,8 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
         OrderStatus.newOrder => AppColors.blue,
         OrderStatus.inProgress => AppColors.yellow,
         OrderStatus.completed => AppColors.green,
-        OrderStatus.canceled => AppColors.red,
+        OrderStatus.canceledByStaff => AppColors.red,
+        OrderStatus.canceledByUser => AppColors.muted,
       };
 }
 

@@ -1,23 +1,38 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/graphql/ws_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/order_model.dart';
-import '../../../shared/widgets/empty_state.dart';
-import '../../../shared/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../chat/providers/unread_messages_provider.dart';
 import '../providers/dashboard_provider.dart';
 
-class DashboardScreen extends ConsumerWidget {
+class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends ConsumerState<DashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabs = TabController(length: 3, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(dashboardProvider);
-    final auth = ref.watch(authProvider);
     final wsClient = ref.watch(wsClientProvider);
 
     return Scaffold(
@@ -40,69 +55,33 @@ class DashboardScreen extends ConsumerWidget {
             onPressed: () => ref.read(dashboardProvider.notifier).fetch(),
           ),
         ],
+        bottom: TabBar(
+          controller: _tabs,
+          labelColor: AppColors.gold,
+          unselectedLabelColor: AppColors.muted,
+          indicatorColor: AppColors.gold,
+          tabs: const [
+            Tab(text: 'Сегодня'),
+            Tab(text: 'Неделя'),
+            Tab(text: 'Месяц'),
+          ],
+        ),
       ),
-      body: RefreshIndicator(
-        color: AppColors.gold,
-        onRefresh: () => ref.read(dashboardProvider.notifier).fetch(),
-        child: state.loading && state.orders.isEmpty
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.gold))
-            : CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: Column(
-                      children: [
-                        if (state.error != null)
-                          _ErrorBanner(message: state.error!),
-                        Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: _CountersGrid(counts: state.counts),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Последние заказы',
-                                style: TextStyle(
-                                  color: AppColors.text,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton(
-                                onPressed: () => context.go('/orders'),
-                                child: const Text('Все'),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (state.recent.isEmpty)
-                    const SliverFillRemaining(
-                      child: EmptyState(
-                        icon: Icons.receipt_long,
-                        message: 'Заказов пока нет',
-                      ),
-                    )
-                  else
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                        (ctx, i) => _DashboardOrderTile(
-                          order: state.recent[i],
-                          isAdmin: auth.isAdmin,
-                        ),
-                        childCount: state.recent.length,
-                      ),
-                    ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 16)),
+      body: state.loading && state.orders.isEmpty
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.gold))
+          : RefreshIndicator(
+              color: AppColors.gold,
+              onRefresh: () => ref.read(dashboardProvider.notifier).fetch(),
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _CountersPage(counts: state.todayCounts),
+                  _CountersPage(counts: state.weekCounts),
+                  _CountersPage(counts: state.monthCounts),
                 ],
               ),
-      ),
+            ),
     );
   }
 }
@@ -134,9 +113,9 @@ class _WsIndicator extends StatelessWidget {
   }
 }
 
-class _CountersGrid extends StatelessWidget {
+class _CountersPage extends StatelessWidget {
   final Map<OrderStatus, int> counts;
-  const _CountersGrid({required this.counts});
+  const _CountersPage({required this.counts});
 
   @override
   Widget build(BuildContext context) {
@@ -144,22 +123,40 @@ class _CountersGrid extends StatelessWidget {
       (OrderStatus.newOrder, AppColors.blue),
       (OrderStatus.inProgress, AppColors.yellow),
       (OrderStatus.completed, AppColors.green),
-      (OrderStatus.canceled, AppColors.red),
+      (OrderStatus.canceledByStaff, AppColors.red),
+      (OrderStatus.canceledByUser, AppColors.muted),
     ];
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      childAspectRatio: 1.8,
-      children: items
-          .map((item) => _CounterCard(
-                status: item.$1,
-                color: item.$2,
-                count: counts[item.$1] ?? 0,
-              ))
-          .toList(),
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.45,
+            children: items
+                .take(4)
+                .map((item) => _CounterCard(
+                      status: item.$1,
+                      color: item.$2,
+                      count: counts[item.$1] ?? 0,
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          _CounterCard(
+            status: items[4].$1,
+            color: items[4].$2,
+            count: counts[items[4].$1] ?? 0,
+            fullWidth: true,
+          ),
+        ],
+      ),
     );
   }
 }
@@ -168,312 +165,58 @@ class _CounterCard extends StatelessWidget {
   final OrderStatus status;
   final Color color;
   final int count;
+  final bool fullWidth;
 
   const _CounterCard({
     required this.status,
     required this.color,
     required this.count,
+    this.fullWidth = false,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: fullWidth ? double.infinity : null,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            '$count',
-            style: TextStyle(
-              color: color,
-              fontSize: 26,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Text(
-            status.label,
-            style: const TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DashboardOrderTile extends ConsumerStatefulWidget {
-  final OrderModel order;
-  final bool isAdmin;
-
-  const _DashboardOrderTile({required this.order, required this.isAdmin});
-
-  @override
-  ConsumerState<_DashboardOrderTile> createState() =>
-      _DashboardOrderTileState();
-}
-
-class _DashboardOrderTileState extends ConsumerState<_DashboardOrderTile> {
-  String? _actionLoading;
-
-  Future<void> _changeStatus(OrderStatus status) async {
-    setState(() => _actionLoading = status.apiValue);
-    final err = await ref
-        .read(dashboardProvider.notifier)
-        .updateStatus(widget.order.id, status);
-    if (mounted) {
-      setState(() => _actionLoading = null);
-      if (err != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(err)));
-      }
-    }
-  }
-
-  Future<void> _delete() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Удалить заказ?'),
-        content: Text(
-            'Заказ #${widget.order.id.substring(0, widget.order.id.length.clamp(0, 8))} будет удалён.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Отмена')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Удалить',
-                style: TextStyle(color: AppColors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-    setState(() => _actionLoading = 'delete');
-    final err = await ref
-        .read(dashboardProvider.notifier)
-        .deleteOrder(widget.order.id);
-    if (mounted) {
-      setState(() => _actionLoading = null);
-      if (err != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(err)));
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final order = widget.order;
-    final isNew = order.status == OrderStatus.newOrder;
-    final unread = ref.watch(unreadMessagesProvider).contains(order.id);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isNew ? AppColors.blue.withValues(alpha: 0.07) : AppColors.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: isNew ? AppColors.blue.withValues(alpha: 0.5) : AppColors.border,
-          width: isNew ? 1.5 : 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              if (isNew)
-                const Padding(
-                  padding: EdgeInsets.only(right: 4),
-                  child: Icon(Icons.fiber_new,
-                      color: AppColors.blue, size: 16),
-                ),
-              Expanded(
-                child: Text(
-                  '#${order.id.substring(0, order.id.length.clamp(0, 8))}',
-                  style: TextStyle(
-                    color: isNew ? AppColors.blue : AppColors.text,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              StatusChip(status: order.status),
-            ],
-          ),
-          if (order.flavor != null) ...[
-            const SizedBox(height: 2),
-            Text(
-              order.flavor!,
-              style:
-                  const TextStyle(color: AppColors.muted, fontSize: 12),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-          if ((order.firstName?.isNotEmpty ?? false) ||
-              (order.lastName?.isNotEmpty ?? false)) ...[
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                const Icon(Icons.person_outline,
-                    size: 12, color: AppColors.muted),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    [order.firstName, order.lastName]
-                        .where((v) => v != null && v.isNotEmpty)
-                        .join(' '),
-                    style: const TextStyle(
-                        color: AppColors.muted, fontSize: 12),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              ...order.status.nextStatuses.map((s) => _ActionChip(
-                    label: _statusLabel(s),
-                    color: _statusColor(s),
-                    loading: _actionLoading == s.apiValue,
-                    onTap: () => _changeStatus(s),
-                  )),
-              if (widget.isAdmin)
-                _ActionChip(
-                  label: 'Удалить',
-                  color: AppColors.red,
-                  loading: _actionLoading == 'delete',
-                  onTap: _delete,
-                ),
-              Stack(
-                children: [
-                  _ActionChip(
-                    label: 'Чат',
-                    color: AppColors.gold,
-                    loading: false,
-                    onTap: () {
-                      ref
-                          .read(unreadMessagesProvider.notifier)
-                          .markRead(order.id);
-                      context.push('/chat/${order.id}');
-                    },
-                  ),
-                  if (unread)
-                    Positioned(
-                      right: 0,
-                      top: 0,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _statusLabel(OrderStatus s) => switch (s) {
-        OrderStatus.inProgress => 'В работу',
-        OrderStatus.completed => 'Завершить',
-        OrderStatus.canceled => 'Отменить',
-        _ => s.label,
-      };
-
-  Color _statusColor(OrderStatus s) => switch (s) {
-        OrderStatus.newOrder => AppColors.blue,
-        OrderStatus.inProgress => AppColors.yellow,
-        OrderStatus.completed => AppColors.green,
-        OrderStatus.canceled => AppColors.red,
-      };
-}
-
-class _ActionChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool loading;
-  final VoidCallback onTap;
-
-  const _ActionChip({
-    required this.label,
-    required this.color,
-    required this.loading,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: loading ? null : onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: loading
-            ? SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: color),
-              )
-            : Text(
-                label,
-                style: TextStyle(
-                    color: color,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600),
-              ),
-      ),
-    );
-  }
-}
-
-class _ErrorBanner extends StatelessWidget {
-  final String message;
-  const _ErrorBanner({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.red.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.red.withOpacity(0.3)),
-      ),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, color: AppColors.red, size: 18),
-          const SizedBox(width: 8),
+          Container(
+            width: 4,
+            height: 40,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              message,
-              style: const TextStyle(color: AppColors.red, fontSize: 13),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  status.label,
+                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],

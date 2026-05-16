@@ -13,7 +13,8 @@ class StatusChip extends StatelessWidget {
       OrderStatus.newOrder => AppColors.blue,
       OrderStatus.inProgress => AppColors.yellow,
       OrderStatus.completed => AppColors.green,
-      OrderStatus.canceled => AppColors.red,
+      OrderStatus.canceledByStaff => AppColors.red,
+      OrderStatus.canceledByUser => AppColors.muted,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
