@@ -11,7 +11,7 @@ import '../../../core/storage/storage_service.dart';
 import '../../../shared/models/message_model.dart';
 import '../../../shared/models/order_model.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../../orders/providers/orders_provider.dart';
+import '../../dashboard/providers/dashboard_provider.dart';
 
 /// Tracks which orderId is currently open in ChatScreen.
 /// Used to suppress push notifications when the user is already viewing that chat.
@@ -29,11 +29,21 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
   StreamSubscription? _sub;
   Timer? _pollTimer;
   bool _disposed = false;
+  List<String> _activeOrderIds = [];
 
   UnreadMessagesNotifier(this._storage, this._ws, this._myUserId, this._ref)
       : super(_storage.unreadOrderIds) {
     _subscribeWs();
     _schedulePoll();
+  }
+
+  void syncActiveOrders(List<OrderModel> orders) {
+    _activeOrderIds = orders
+        .where((o) =>
+            o.status == OrderStatus.newOrder ||
+            o.status == OrderStatus.inProgress)
+        .map((o) => o.id)
+        .toList();
   }
 
   // ── WebSocket fast path ──────────────────────────────────────────────────
@@ -44,10 +54,12 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
       if (data == null) return;
       final orderId = data['orderId'] as String?;
       final senderId = data['senderId'] as String?;
+      final senderRole = data['senderRole'] as String?;
       final text = data['text'] as String? ?? '';
       if (orderId == null) return;
       final isFromSelf = _myUserId != null && senderId == _myUserId;
-      if (!isFromSelf) {
+      final isFromStaff = senderRole != null && _staffRoles.contains(senderRole);
+      if (!isFromSelf && !isFromStaff) {
         _notify(orderId, text);
       }
     });
@@ -56,7 +68,7 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
   // ── HTTP polling fallback (every 30 s) ──────────────────────────────────
 
   void _schedulePoll() {
-    // Short initial delay so ordersProvider has time to populate.
+    // Short initial delay so dashboardProvider has time to populate _activeOrderIds.
     Future.delayed(const Duration(seconds: 10), () {
       if (_disposed) return;
       _pollMessages();
@@ -68,19 +80,14 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
 
   Future<void> _pollMessages() async {
     try {
-      final orders = _ref.read(ordersProvider).orders;
-      final active = orders
-          .where((o) =>
-              o.status == OrderStatus.newOrder ||
-              o.status == OrderStatus.inProgress)
-          .toList();
+      final active = List<String>.from(_activeOrderIds);
       if (active.isEmpty) return;
 
       final client = _ref.read(graphqlClientProvider);
 
-      for (final order in active) {
+      for (final orderId in active) {
         if (_disposed) return;
-        await _pollOrder(client, order.id);
+        await _pollOrder(client, orderId);
       }
     } catch (e) {
       debugPrint('UnreadMessagesNotifier._pollMessages: $e');
@@ -190,5 +197,15 @@ final unreadMessagesProvider =
   final storage = ref.watch(storageServiceProvider);
   final ws = ref.watch(wsClientProvider);
   final auth = ref.watch(authProvider);
-  return UnreadMessagesNotifier(storage, ws, auth.userId, ref);
+  final notifier = UnreadMessagesNotifier(storage, ws, auth.userId, ref);
+
+  // Keep dashboardProvider alive and sync active orders so _pollMessages
+  // always has a fresh list regardless of which screen is open.
+  ref.listen<DashboardState>(
+    dashboardProvider,
+    (_, next) => notifier.syncActiveOrders(next.orders),
+    fireImmediately: true,
+  );
+
+  return notifier;
 });
