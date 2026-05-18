@@ -86,7 +86,7 @@ class _OrdersScreenState extends ConsumerState<OrdersScreen> {
                   if (state.error != null)
                     Container(
                       padding: const EdgeInsets.all(12),
-                      color: AppColors.red.withOpacity(0.1),
+                      color: AppColors.red.withValues(alpha:0.1),
                       child: Text(state.error!,
                           style: const TextStyle(color: AppColors.red)),
                     ),
@@ -187,10 +187,10 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: isNew ? AppColors.blue.withOpacity(0.07) : AppColors.surface,
+        color: isNew ? AppColors.blue.withValues(alpha:0.07) : AppColors.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isNew ? AppColors.blue.withOpacity(0.5) : AppColors.border,
+          color: isNew ? AppColors.blue.withValues(alpha:0.5) : AppColors.border,
           width: isNew ? 1.5 : 1,
         ),
       ),
@@ -364,9 +364,9 @@ class _ActionChip extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha:0.1),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.4)),
+          border: Border.all(color: color.withValues(alpha:0.4)),
         ),
         child: loading
             ? SizedBox(

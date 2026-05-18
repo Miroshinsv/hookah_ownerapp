@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/chat/screens/chat_screen.dart';
+import '../../features/chat/screens/lounge_chat_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/lounges/screens/lounge_form_screen.dart';
 import '../../features/lounges/screens/lounges_screen.dart';
@@ -56,6 +57,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/chat/:orderId',
         builder: (_, state) =>
             ChatScreen(orderId: state.pathParameters['orderId']!),
+      ),
+      GoRoute(
+        path: '/lounge-chat/:loungeId',
+        builder: (_, state) => LoungeChatScreen(
+          loungeId: state.pathParameters['loungeId']!,
+          loungeName: state.uri.queryParameters['name'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/lounge-form',

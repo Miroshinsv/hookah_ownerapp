@@ -565,7 +565,8 @@ class _DayRow extends StatelessWidget {
           Switch(
             value: enabled,
             onChanged: onToggle,
-            activeColor: AppColors.gold,
+            activeThumbColor: AppColors.gold,
+            activeTrackColor: AppColors.gold.withValues(alpha: 0.4),
           ),
           SizedBox(
             width: 28,

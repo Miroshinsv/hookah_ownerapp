@@ -54,6 +54,13 @@ query Lounges {
     latitude
     longitude
     ownerUserId
+    mediaEnabled
+    mediaMaxFiles
+    chatEnabled
+    photos {
+      id
+      url
+    }
     staff {
       id
       userId
@@ -274,6 +281,71 @@ subscription NewMessage {
     senderId
     senderRole
     text
+  }
+}
+''';
+
+const kSetLoungeMediaEnabledMutation = r'''
+mutation SetLoungeMediaEnabled($loungeId: String!, $mediaEnabled: Boolean!) {
+  setLoungeMediaEnabled(loungeId: $loungeId, mediaEnabled: $mediaEnabled)
+}
+''';
+
+const kSetLoungeMediaMaxFilesMutation = r'''
+mutation SetLoungeMediaMaxFiles($loungeId: String!, $mediaMaxFiles: Int!) {
+  setLoungeMediaMaxFiles(loungeId: $loungeId, mediaMaxFiles: $mediaMaxFiles)
+}
+''';
+
+const kUploadLoungePhotoMutation = r'''
+mutation UploadLoungePhoto($loungeId: String!, $imageBase64: String!, $mimeType: String!) {
+  uploadLoungePhoto(loungeId: $loungeId, imageBase64: $imageBase64, mimeType: $mimeType)
+}
+''';
+
+const kDeleteLoungePhotoMutation = r'''
+mutation DeleteLoungePhoto($loungeId: String!, $photoId: String!) {
+  deleteLoungePhoto(loungeId: $loungeId, photoId: $photoId)
+}
+''';
+
+const kSetChatEnabledMutation = r'''
+mutation SetChatEnabled($loungeId: String!, $chatEnabled: Boolean!) {
+  setChatEnabled(loungeId: $loungeId, chatEnabled: $chatEnabled)
+}
+''';
+
+const kLoungeChatMessagesQuery = r'''
+query LoungeChatMessages($loungeId: String!, $limit: Int) {
+  loungeChatMessages(loungeId: $loungeId, limit: $limit) {
+    messageId
+    loungeId
+    senderId
+    senderRole
+    text
+    createdAt
+  }
+}
+''';
+
+const kSendLoungeChatMessageMutation = r'''
+mutation SendLoungeChatMessage($loungeId: String!, $text: String!) {
+  sendLoungeChatMessage(loungeId: $loungeId, text: $text) {
+    messageId
+    createdAt
+  }
+}
+''';
+
+const kNewLoungeChatMessageSubscription = r'''
+subscription NewLoungeChatMessage($loungeId: String!) {
+  newLoungeChatMessage(loungeId: $loungeId) {
+    messageId
+    loungeId
+    senderId
+    senderRole
+    text
+    createdAt
   }
 }
 ''';

@@ -122,6 +122,96 @@ class LoungesNotifier extends StateNotifier<LoungesState> {
       return e.toString();
     }
   }
+
+  Future<String?> setMediaEnabled(String loungeId, bool enabled) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kSetLoungeMediaEnabledMutation),
+        variables: {'loungeId': loungeId, 'mediaEnabled': enabled},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка';
+      }
+      await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> setMediaMaxFiles(String loungeId, int maxFiles) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kSetLoungeMediaMaxFilesMutation),
+        variables: {'loungeId': loungeId, 'mediaMaxFiles': maxFiles},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка';
+      }
+      await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> uploadPhoto(
+      String loungeId, String imageBase64, String mimeType) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kUploadLoungePhotoMutation),
+        variables: {
+          'loungeId': loungeId,
+          'imageBase64': imageBase64,
+          'mimeType': mimeType,
+        },
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка загрузки';
+      }
+      await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> deletePhoto(String loungeId, String photoId) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kDeleteLoungePhotoMutation),
+        variables: {'loungeId': loungeId, 'photoId': photoId},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка удаления';
+      }
+      await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  Future<String?> setChatEnabled(String loungeId, bool enabled) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kSetChatEnabledMutation),
+        variables: {'loungeId': loungeId, 'chatEnabled': enabled},
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка';
+      }
+      await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
 }
 
 final loungesProvider =

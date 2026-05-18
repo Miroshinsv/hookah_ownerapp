@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
+import '../../../shared/models/lounge_photo_model.dart';
 import '../../../shared/models/staff_model.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../chat/screens/lounge_chat_screen.dart';
 import '../../staff/providers/staff_provider.dart';
 import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
@@ -179,6 +182,10 @@ class _LoungeDetailScreen extends ConsumerStatefulWidget {
 class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
   bool _deleting = false;
   String? _deletingStaffId;
+  bool _togglingMedia = false;
+  bool _togglingChat = false;
+  bool _uploadingPhoto = false;
+  String? _deletingPhotoId;
 
   Future<void> _delete() async {
     final confirm = await showDialog<bool>(
@@ -273,6 +280,154 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
     ).then((_) {
       if (mounted) ref.read(loungesProvider.notifier).fetch();
     });
+  }
+
+  Future<void> _toggleMedia(LoungeModel lounge, bool enabled) async {
+    setState(() => _togglingMedia = true);
+    final err = await ref
+        .read(loungesProvider.notifier)
+        .setMediaEnabled(lounge.id, enabled);
+    if (!mounted) return;
+    setState(() => _togglingMedia = false);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  Future<void> _toggleChat(LoungeModel lounge, bool enabled) async {
+    setState(() => _togglingChat = true);
+    final err = await ref
+        .read(loungesProvider.notifier)
+        .setChatEnabled(lounge.id, enabled);
+    if (!mounted) return;
+    setState(() => _togglingChat = false);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  Future<void> _showMaxFilesDialog(LoungeModel lounge) async {
+    final ctrl = TextEditingController(text: '${lounge.mediaMaxFiles}');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Максимум фотографий'),
+        content: TextField(
+          controller: ctrl,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            hintText: '1–100',
+            isDense: true,
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Сохранить'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (result == null || !mounted) return;
+    final val = int.tryParse(result);
+    if (val == null || val < 1 || val > 100) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Введите число от 1 до 100')),
+      );
+      return;
+    }
+    final err = await ref
+        .read(loungesProvider.notifier)
+        .setMediaMaxFiles(lounge.id, val);
+    if (!mounted) return;
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  Future<void> _uploadPhoto(LoungeModel lounge) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (file == null || !mounted) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final base64 = base64Encode(bytes);
+      final ext = file.name.split('.').last.toLowerCase();
+      final mimeType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        'gif' => 'image/gif',
+        _ => 'image/jpeg',
+      };
+      final err = await ref
+          .read(loungesProvider.notifier)
+          .uploadPhoto(lounge.id, base64, mimeType);
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
+  }
+
+  Future<void> _deletePhoto(LoungeModel lounge, LoungePhotoModel photo) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Удалить фото?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child:
+                const Text('Удалить', style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+    setState(() => _deletingPhotoId = photo.id);
+    final err = await ref
+        .read(loungesProvider.notifier)
+        .deletePhoto(lounge.id, photo.id);
+    if (!mounted) return;
+    setState(() => _deletingPhotoId = null);
+    if (err != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+
+  void _openLoungeChat(LoungeModel lounge) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UncontrolledProviderScope(
+          container: ProviderScope.containerOf(context),
+          child: LoungeChatScreen(
+            loungeId: lounge.id,
+            loungeName: lounge.name,
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -457,6 +612,176 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
                   onDelete: () => _deleteStaff(s),
                 ),
               ),
+            const SizedBox(height: 16),
+          ],
+
+          // Photos section
+          if (lounge.photos.isNotEmpty || (auth.isAdmin && lounge.mediaEnabled)) ...[
+            Row(
+              children: [
+                const Text(
+                  'Фото',
+                  style: TextStyle(
+                      color: AppColors.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                if (auth.isAdmin && lounge.mediaEnabled)
+                  Text(
+                    '${lounge.photos.length}/${lounge.mediaMaxFiles}',
+                    style: const TextStyle(
+                        color: AppColors.muted, fontSize: 12),
+                  ),
+                if (auth.isAdmin &&
+                    lounge.mediaEnabled &&
+                    lounge.photos.length < lounge.mediaMaxFiles) ...[
+                  const SizedBox(width: 8),
+                  if (_uploadingPhoto)
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.gold),
+                    )
+                  else
+                    IconButton(
+                      icon: const Icon(Icons.add_photo_alternate_outlined),
+                      color: AppColors.gold,
+                      iconSize: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      tooltip: 'Добавить фото',
+                      onPressed: () => _uploadPhoto(lounge),
+                    ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (lounge.photos.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Нет фотографий',
+                  style: TextStyle(color: AppColors.muted, fontSize: 13),
+                ),
+              )
+            else
+              SizedBox(
+                height: 110,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: lounge.photos.length,
+                  separatorBuilder: (context, index) => const SizedBox(width: 8),
+                  itemBuilder: (ctx, i) {
+                    final photo = lounge.photos[i];
+                    final isDeleting = _deletingPhotoId == photo.id;
+                    return Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            photo.url,
+                            width: 110,
+                            height: 110,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stack) => Container(
+                              width: 110,
+                              height: 110,
+                              color: AppColors.surface2,
+                              child: const Icon(Icons.broken_image_outlined,
+                                  color: AppColors.muted),
+                            ),
+                          ),
+                        ),
+                        if (auth.isAdmin)
+                          Positioned(
+                            top: 4,
+                            right: 4,
+                            child: isDeleting
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: AppColors.red),
+                                  )
+                                : GestureDetector(
+                                    onTap: () => _deletePhoto(lounge, photo),
+                                    child: Container(
+                                      width: 22,
+                                      height: 22,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withValues(alpha: 0.6),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.close,
+                                          size: 14, color: Colors.white),
+                                    ),
+                                  ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            const SizedBox(height: 16),
+          ],
+
+          // Admin toggles: media & chat
+          if (auth.isAdmin) ...[
+            const Text(
+              'Управление',
+              style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            _ToggleTile(
+              icon: Icons.photo_library_outlined,
+              label: 'Загрузка фото',
+              value: lounge.mediaEnabled,
+              loading: _togglingMedia,
+              onChanged: (v) => _toggleMedia(lounge, v),
+            ),
+            if (lounge.mediaEnabled)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.filter_none_outlined,
+                    size: 18, color: AppColors.muted),
+                title: Text(
+                  'Максимум фото: ${lounge.mediaMaxFiles}',
+                  style: const TextStyle(color: AppColors.text, fontSize: 13),
+                ),
+                trailing: IconButton(
+                  icon: const Icon(Icons.edit_outlined,
+                      size: 16, color: AppColors.muted),
+                  onPressed: () => _showMaxFilesDialog(lounge),
+                ),
+              ),
+            _ToggleTile(
+              icon: Icons.chat_outlined,
+              label: 'Чат с посетителями',
+              value: lounge.chatEnabled,
+              loading: _togglingChat,
+              onChanged: (v) => _toggleChat(lounge, v),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // Open lounge chat button (for all roles if chatEnabled)
+          if (lounge.chatEnabled) ...[
+            OutlinedButton.icon(
+              onPressed: () => _openLoungeChat(lounge),
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Открыть чат заведения'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.gold,
+                side: const BorderSide(color: AppColors.gold),
+                minimumSize: const Size.fromHeight(40),
+              ),
+            ),
+            const SizedBox(height: 16),
           ],
         ],
       ),
@@ -559,6 +884,45 @@ class _StaffTile extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _ToggleTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool value;
+  final bool loading;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.loading,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Icon(icon, size: 18, color: AppColors.muted),
+      title: Text(label,
+          style: const TextStyle(color: AppColors.text, fontSize: 13)),
+      trailing: loading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child:
+                  CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold),
+            )
+          : Switch(
+              value: value,
+              onChanged: onChanged,
+              activeThumbColor: AppColors.gold,
+              activeTrackColor: AppColors.gold.withValues(alpha: 0.4),
+            ),
     );
   }
 }

@@ -6,21 +6,25 @@ import 'package:intl/intl.dart';
 
 import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../shared/models/message_model.dart';
+import '../../../shared/models/lounge_chat_message_model.dart';
 import '../../auth/providers/auth_provider.dart';
-import '../providers/chat_provider.dart';
-import '../providers/unread_messages_provider.dart';
+import '../providers/lounge_chat_provider.dart';
 
-class ChatScreen extends ConsumerStatefulWidget {
-  final String orderId;
+class LoungeChatScreen extends ConsumerStatefulWidget {
+  final String loungeId;
+  final String loungeName;
 
-  const ChatScreen({super.key, required this.orderId});
+  const LoungeChatScreen({
+    super.key,
+    required this.loungeId,
+    required this.loungeName,
+  });
 
   @override
-  ConsumerState<ChatScreen> createState() => _ChatScreenState();
+  ConsumerState<LoungeChatScreen> createState() => _LoungeChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _LoungeChatScreenState extends ConsumerState<LoungeChatScreen> {
   final _scrollCtrl = ScrollController();
   final _textCtrl = TextEditingController();
   StreamSubscription? _sub;
@@ -31,46 +35,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeChatOrderIdProvider.notifier).state = widget.orderId;
-      _markRead();
       _startSubscription();
       _startPolling();
     });
   }
 
-  Future<void> _markRead() {
-    return ref
-        .read(unreadMessagesProvider.notifier)
-        .markRead(widget.orderId);
-  }
-
-  // WebSocket subscription — instant delivery when it works.
   void _startSubscription() {
     final wsClient = ref.read(wsClientProvider);
-    _sub = wsClient.subscribe(kNewMessageSubscription).listen((payload) {
+    _sub = wsClient
+        .subscribe(kNewLoungeChatMessageSubscription,
+            variables: {'loungeId': widget.loungeId})
+        .listen((payload) {
       final data =
-          payload['data']?['newMessage'] as Map<String, dynamic>?;
+          payload['data']?['newLoungeChatMessage'] as Map<String, dynamic>?;
       if (data == null || !mounted) return;
-      if (data['orderId'] == widget.orderId) {
-        final msg = MessageModel(
-          id: '${DateTime.now().millisecondsSinceEpoch}',
-          senderId: data['senderId'] as String?,
-          senderRole: data['senderRole'] as String?,
-          text: data['text'] as String? ?? '',
-          createdAt: DateTime.now(),
-        );
-        ref.read(chatProviderFamily(widget.orderId).notifier).addMessage(msg);
-        _markRead();
-      }
+      final msg = LoungeChatMessageModel(
+        messageId: '${DateTime.now().millisecondsSinceEpoch}',
+        senderId: data['senderId'] as String?,
+        senderRole: data['senderRole'] as String?,
+        text: data['text'] as String? ?? '',
+        createdAt: DateTime.now(),
+      );
+      ref.read(loungeChatProvider(widget.loungeId).notifier).addMessage(msg);
     });
   }
 
-  // Polling fallback — guarantees messages arrive even if WS subscription
-  // doesn't fire (e.g. server sends events to only one subscriber).
   void _startPolling() {
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (mounted) {
-        ref.read(chatProviderFamily(widget.orderId).notifier).fetch();
+        ref.read(loungeChatProvider(widget.loungeId).notifier).fetch();
       }
     });
   }
@@ -95,7 +88,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _textCtrl.clear();
 
     final err = await ref
-        .read(chatProviderFamily(widget.orderId).notifier)
+        .read(loungeChatProvider(widget.loungeId).notifier)
         .send(text);
 
     if (mounted) {
@@ -112,9 +105,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   void dispose() {
-    if (ref.read(activeChatOrderIdProvider) == widget.orderId) {
-      ref.read(activeChatOrderIdProvider.notifier).state = null;
-    }
     _sub?.cancel();
     _pollTimer?.cancel();
     _scrollCtrl.dispose();
@@ -124,31 +114,27 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(chatProviderFamily(widget.orderId));
+    final state = ref.watch(loungeChatProvider(widget.loungeId));
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId;
 
-    // Auto-scroll and mark read when new messages arrive (subscription or poll).
-    ref.listen(chatProviderFamily(widget.orderId), (prev, next) {
-      final prevLast = prev?.messages.lastOrNull?.id;
-      final nextLast = next.messages.lastOrNull?.id;
+    ref.listen(loungeChatProvider(widget.loungeId), (prev, next) {
+      final prevLast = prev?.messages.lastOrNull?.messageId;
+      final nextLast = next.messages.lastOrNull?.messageId;
       if (nextLast != null && nextLast != prevLast) {
         _scrollToBottom();
-        _markRead();
       }
     });
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: Text(
-            'Чат — #${widget.orderId.substring(0, widget.orderId.length.clamp(0, 8))}'),
+        title: Text('Чат — ${widget.loungeName}'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () => ref
-                .read(chatProviderFamily(widget.orderId).notifier)
-                .fetch(),
+            onPressed: () =>
+                ref.read(loungeChatProvider(widget.loungeId).notifier).fetch(),
           ),
         ],
       ),
@@ -179,7 +165,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       const SizedBox(height: 16),
                       TextButton(
                         onPressed: () => ref
-                            .read(chatProviderFamily(widget.orderId).notifier)
+                            .read(loungeChatProvider(widget.loungeId).notifier)
                             .fetch(),
                         child: const Text('Повторить'),
                       ),
@@ -193,7 +179,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               child: RefreshIndicator(
                 color: AppColors.gold,
                 onRefresh: () => ref
-                    .read(chatProviderFamily(widget.orderId).notifier)
+                    .read(loungeChatProvider(widget.loungeId).notifier)
                     .fetch(),
                 child: state.messages.isEmpty
                     ? const Center(
@@ -229,7 +215,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 }
 
 class _MessageBubble extends StatelessWidget {
-  final MessageModel message;
+  final LoungeChatMessageModel message;
   final bool isMine;
 
   const _MessageBubble({required this.message, required this.isMine});
@@ -299,6 +285,7 @@ class _MessageBubble extends StatelessWidget {
         'hostess' => 'Хостес',
         'waiter' => 'Официант',
         'staff' => 'Сотрудник',
+        'user' => 'Посетитель',
         _ => role,
       };
 }
