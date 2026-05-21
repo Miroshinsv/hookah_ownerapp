@@ -1,11 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
@@ -353,9 +352,49 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
   }
 
   Future<void> _uploadPhoto(LoungeModel lounge) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined,
+                  color: AppColors.gold),
+              title: const Text('Галерея',
+                  style: TextStyle(color: AppColors.text)),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined,
+                  color: AppColors.gold),
+              title: const Text('Камера',
+                  style: TextStyle(color: AppColors.text)),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
     final picker = ImagePicker();
     final file = await picker.pickImage(
-      source: ImageSource.gallery,
+      source: source,
       imageQuality: 85,
     );
     if (file == null || !mounted) return;
@@ -509,31 +548,38 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
               borderRadius: BorderRadius.circular(10),
               child: SizedBox(
                 height: 200,
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: LatLng(
-                        lounge.latitude!, lounge.longitude!),
-                    initialZoom: 15,
-                    interactionOptions: const InteractionOptions(
-                      flags: InteractiveFlag.none,
-                    ),
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.hookah.admin',
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: LatLng(lounge.latitude!, lounge.longitude!),
-                          child: const Icon(Icons.location_pin,
-                              color: AppColors.gold, size: 36),
+                child: AbsorbPointer(
+                  child: YandexMap(
+                    onMapCreated: (controller) async {
+                      await controller.moveCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: Point(
+                              latitude: lounge.latitude!,
+                              longitude: lounge.longitude!,
+                            ),
+                            zoom: 15,
+                          ),
                         ),
-                      ],
-                    ),
-                  ],
+                      );
+                    },
+                    mapObjects: [
+                      PlacemarkMapObject(
+                        mapId: const MapObjectId('lounge_detail'),
+                        point: Point(
+                          latitude: lounge.latitude!,
+                          longitude: lounge.longitude!,
+                        ),
+                        icon: PlacemarkIcon.single(
+                          PlacemarkIconStyle(
+                            image: BitmapDescriptor.fromAssetImage(
+                                'assets/icon/hookah.png'),
+                            scale: 0.08,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

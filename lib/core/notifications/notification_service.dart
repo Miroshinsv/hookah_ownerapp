@@ -12,10 +12,16 @@ class NotificationService {
   static final _chatOpenController = StreamController<String>.broadcast();
   static Stream<String> get chatOpenStream => _chatOpenController.stream;
 
+  static final _loungeChatOpenController = StreamController<String>.broadcast();
+  static Stream<String> get loungeChatOpenStream =>
+      _loungeChatOpenController.stream;
+
   static void _onNotificationTap(NotificationResponse response) {
     final payload = response.payload;
     if (payload != null && payload.startsWith('chat:')) {
       _chatOpenController.add(payload.substring(5));
+    } else if (payload != null && payload.startsWith('lounge-chat:')) {
+      _loungeChatOpenController.add(payload.substring(12));
     }
   }
 
@@ -129,6 +135,36 @@ class NotificationService {
       );
     } catch (e) {
       debugPrint('NotificationService.showNewMessage: $e');
+    }
+  }
+
+  static Future<void> showNewLoungeChatMessage(
+      String loungeId, String loungeName, String text) async {
+    if (!_initialized) return;
+    try {
+      await _plugin.show(
+        loungeId.hashCode ^ 0xC000,
+        'Чат — $loungeName',
+        text.isNotEmpty ? text : 'Новое сообщение',
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            _msgChannelId, _msgChannelName,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            icon: _notifIcon,
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+            presentBadge: true,
+          ),
+        ),
+        payload: 'lounge-chat:$loungeId',
+      );
+    } catch (e) {
+      debugPrint('NotificationService.showNewLoungeChatMessage: $e');
     }
   }
 

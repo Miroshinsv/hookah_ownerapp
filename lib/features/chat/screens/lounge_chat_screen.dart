@@ -9,6 +9,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_chat_message_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../providers/lounge_chat_provider.dart';
+import '../providers/lounge_unread_provider.dart';
 
 class LoungeChatScreen extends ConsumerStatefulWidget {
   final String loungeId;
@@ -35,6 +36,8 @@ class _LoungeChatScreenState extends ConsumerState<LoungeChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(activeLoungeChatIdProvider.notifier).state = widget.loungeId;
+      ref.read(loungeUnreadProvider.notifier).markRead(widget.loungeId);
       _startSubscription();
       _startPolling();
     });
@@ -105,6 +108,7 @@ class _LoungeChatScreenState extends ConsumerState<LoungeChatScreen> {
 
   @override
   void dispose() {
+    ref.read(activeLoungeChatIdProvider.notifier).state = null;
     _sub?.cancel();
     _pollTimer?.cancel();
     _scrollCtrl.dispose();

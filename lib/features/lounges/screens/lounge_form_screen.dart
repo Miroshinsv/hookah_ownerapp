@@ -2,10 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
+import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/staff_model.dart';
@@ -13,6 +12,8 @@ import '../../../shared/widgets/loading_button.dart';
 import '../../staff/providers/staff_provider.dart';
 import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
+
+const String _kGeocoderApiKey = String.fromEnvironment('YANDEX_MAPS_API_KEY');
 
 class LoungeFormScreen extends ConsumerStatefulWidget {
   final String? loungeId;
@@ -36,6 +37,7 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
     filter: {'#': RegExp(r'\d')},
   );
 
+  YandexMapController? _mapController;
   double? _lat;
   double? _lng;
   bool _loading = false;
@@ -90,6 +92,16 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
       } catch (_) {}
     }
     setState(() {});
+    if (_lat != null && _lng != null) {
+      _mapController?.moveCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: Point(latitude: _lat!, longitude: _lng!),
+            zoom: 15,
+          ),
+        ),
+      );
+    }
   }
 
   @override
@@ -108,6 +120,31 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
     super.dispose();
   }
 
+  Future<void> _reverseGeocode(double lat, double lng) async {
+    try {
+      final client = HttpClient();
+      final req = await client.getUrl(Uri.parse(
+        'https://geocode-maps.yandex.ru/1.x/'
+        '?apikey=$_kGeocoderApiKey'
+        '&geocode=$lng,$lat'
+        '&format=json'
+        '&lang=ru_RU',
+      ));
+      final resp = await req.close().timeout(const Duration(seconds: 10));
+      final body = await resp.transform(utf8.decoder).join();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final members = (data['response']['GeoObjectCollection']['featureMember'] as List)
+          .cast<Map<String, dynamic>>();
+      if (members.isNotEmpty && mounted) {
+        final geo = members.first['GeoObject'] as Map<String, dynamic>;
+        final name = geo['name'] as String? ?? '';
+        final desc = geo['description'] as String? ?? '';
+        final addr = desc.isNotEmpty ? '$name, $desc' : name;
+        if (addr.isNotEmpty) setState(() => _shortAddrCtrl.text = addr);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _search() async {
     final q = _searchCtrl.text.trim();
     if (q.isEmpty) return;
@@ -115,13 +152,26 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
     try {
       final client = HttpClient();
       final req = await client.getUrl(Uri.parse(
-        'https://nominatim.openstreetmap.org/search'
-        '?q=${Uri.encodeComponent(q)}&format=json&limit=5&accept-language=ru',
+        'https://geocode-maps.yandex.ru/1.x/'
+        '?apikey=$_kGeocoderApiKey'
+        '&geocode=${Uri.encodeComponent(q)}'
+        '&format=json'
+        '&lang=ru_RU'
+        '&results=5',
       ));
-      req.headers.set('User-Agent', 'HookahAdminApp/1.0');
       final resp = await req.close().timeout(const Duration(seconds: 10));
       final body = await resp.transform(utf8.decoder).join();
-      final results = (jsonDecode(body) as List).cast<Map<String, dynamic>>();
+      final data = jsonDecode(body) as Map<String, dynamic>;
+      final members = (data['response']['GeoObjectCollection']['featureMember'] as List)
+          .cast<Map<String, dynamic>>();
+      final results = members.map((m) {
+        final geo = m['GeoObject'] as Map<String, dynamic>;
+        return {
+          'name': geo['name'] as String? ?? '',
+          'description': geo['description'] as String? ?? '',
+          'pos': (geo['Point'] as Map<String, dynamic>)['pos'] as String? ?? '',
+        };
+      }).toList();
       setState(() {
         _searchResults = results;
         _searching = false;
@@ -132,16 +182,29 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
   }
 
   void _selectResult(Map<String, dynamic> r) {
+    // Yandex Geocoder returns coordinates as "lng lat" in the pos field
+    final parts = (r['pos'] as String? ?? '').split(' ');
+    if (parts.length != 2) return;
+    final lng = double.tryParse(parts[0]);
+    final lat = double.tryParse(parts[1]);
+    if (lat == null || lng == null) return;
+    final name = r['name'] as String? ?? '';
+    final desc = r['description'] as String? ?? '';
+    final addr = desc.isNotEmpty ? '$name, $desc' : name;
     setState(() {
-      _lat = double.tryParse(r['lat'] as String? ?? '');
-      _lng = double.tryParse(r['lon'] as String? ?? '');
-      final addr = r['display_name'] as String? ?? '';
-      if (_shortAddrCtrl.text.isEmpty) {
-        _shortAddrCtrl.text = addr.split(',').take(2).join(',').trim();
+      _lat = lat;
+      _lng = lng;
+      if (_shortAddrCtrl.text.isEmpty && addr.isNotEmpty) {
+        _shortAddrCtrl.text = addr;
       }
       _searchResults = [];
       _searchCtrl.clear();
     });
+    _mapController?.moveCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: Point(latitude: lat, longitude: lng), zoom: 15),
+      ),
+    );
   }
 
   String _buildSchedule() {
@@ -386,7 +449,7 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
                       .map((r) => ListTile(
                             dense: true,
                             title: Text(
-                              r['display_name'] as String? ?? '',
+                              '${r['name']}, ${r['description']}',
                               style: const TextStyle(
                                   color: AppColors.text, fontSize: 13),
                               maxLines: 2,
@@ -403,88 +466,80 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
               controller: _shortAddrCtrl,
               decoration: const InputDecoration(labelText: 'Краткий адрес'),
             ),
-            if (_lat != null && _lng != null) ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  height: 180,
-                  child: FlutterMap(
-                    options: MapOptions(
-                      initialCenter: LatLng(_lat!, _lng!),
-                      initialZoom: 15,
-                      onTap: (_, point) {
-                        setState(() {
-                          _lat = point.latitude;
-                          _lng = point.longitude;
-                        });
-                      },
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.hookah.admin',
-                      ),
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: LatLng(_lat!, _lng!),
-                            child: const Icon(
-                              Icons.location_pin,
-                              color: AppColors.gold,
-                              size: 36,
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: 180,
+                child: YandexMap(
+                  onMapCreated: (controller) async {
+                    _mapController = controller;
+                    if (_lat != null && _lng != null) {
+                      await controller.moveCamera(
+                        CameraUpdate.newCameraPosition(
+                          CameraPosition(
+                            target: Point(latitude: _lat!, longitude: _lng!),
+                            zoom: 15,
+                          ),
+                        ),
+                      );
+                    } else {
+                      await controller.moveCamera(
+                        CameraUpdate.newCameraPosition(
+                          const CameraPosition(
+                            target: Point(latitude: 55.7558, longitude: 37.6173),
+                            zoom: 10,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  mapObjects: _lat != null && _lng != null
+                      ? [
+                          PlacemarkMapObject(
+                            mapId: const MapObjectId('lounge'),
+                            point: Point(latitude: _lat!, longitude: _lng!),
+                            icon: PlacemarkIcon.single(
+                              PlacemarkIconStyle(
+                                image: BitmapDescriptor.fromAssetImage(
+                                    'assets/icon/hookah.png'),
+                                scale: 0.08,
+                              ),
                             ),
                           ),
-                        ],
+                        ]
+                      : [],
+                  onMapTap: (point) {
+                    setState(() {
+                      _lat = point.latitude;
+                      _lng = point.longitude;
+                    });
+                    _mapController?.moveCamera(
+                      CameraUpdate.newCameraPosition(
+                        CameraPosition(target: point, zoom: 15),
                       ),
-                    ],
-                  ),
+                    );
+                    _reverseGeocode(point.latitude, point.longitude);
+                  },
                 ),
               ),
+            ),
+            if (_lat != null && _lng != null)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  'Координаты: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)}',
-                  style:
-                      const TextStyle(color: AppColors.muted, fontSize: 11),
+                  'Координаты: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)} · Нажмите для перемещения',
+                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
                 ),
-              ),
-            ] else ...[
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: SizedBox(
-                  height: 180,
-                  child: FlutterMap(
-                    options: MapOptions(
-                      initialCenter: const LatLng(55.7558, 37.6173),
-                      initialZoom: 10,
-                      onTap: (_, point) {
-                        setState(() {
-                          _lat = point.latitude;
-                          _lng = point.longitude;
-                        });
-                      },
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.hookah.admin',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+              )
+            else
               const Padding(
                 padding: EdgeInsets.only(top: 6),
                 child: Text(
-                  'Нажмите на карту для выбора координат',
+                  'Нажмите на карту — координаты и адрес обновятся автоматически',
                   style: TextStyle(color: AppColors.muted, fontSize: 11),
                 ),
               ),
-            ],
             const SizedBox(height: 24),
             _SectionTitle('Расписание'),
             const SizedBox(height: 12),

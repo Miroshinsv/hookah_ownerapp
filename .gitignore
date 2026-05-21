@@ -49,3 +49,4 @@ android/key.properties
 android/app/release.keystore
 *.keystore
 *.jks
+ios/Flutter/Secret.xcconfig

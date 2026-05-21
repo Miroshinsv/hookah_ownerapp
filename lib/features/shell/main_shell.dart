@@ -10,8 +10,10 @@ import '../../core/theme/app_theme.dart';
 import '../../core/update/update_dialog.dart';
 import '../../core/update/update_service.dart';
 import '../auth/providers/auth_provider.dart';
+import '../chat/providers/lounge_unread_provider.dart';
 import '../chat/providers/unread_messages_provider.dart';
 import '../dashboard/providers/dashboard_provider.dart';
+import '../lounges/providers/lounges_provider.dart';
 import '../orders/providers/orders_provider.dart';
 
 class MainShell extends ConsumerStatefulWidget {
@@ -27,6 +29,7 @@ class MainShell extends ConsumerStatefulWidget {
 class _MainShellState extends ConsumerState<MainShell>
     with WidgetsBindingObserver {
   StreamSubscription<String>? _notifSub;
+  StreamSubscription<String>? _loungeNotifSub;
 
   @override
   void initState() {
@@ -37,11 +40,14 @@ class _MainShellState extends ConsumerState<MainShell>
       _checkPendingNotification();
     });
     _notifSub = NotificationService.chatOpenStream.listen(_openChat);
+    _loungeNotifSub =
+        NotificationService.loungeChatOpenStream.listen(_openLoungeChat);
   }
 
   @override
   void dispose() {
     _notifSub?.cancel();
+    _loungeNotifSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -50,6 +56,7 @@ class _MainShellState extends ConsumerState<MainShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref.read(unreadMessagesProvider.notifier).refreshFromStorage();
+      ref.read(loungeUnreadProvider.notifier).refreshFromStorage();
     }
   }
 
@@ -71,6 +78,17 @@ class _MainShellState extends ConsumerState<MainShell>
     if (mounted) context.push('/chat/$orderId');
   }
 
+  void _openLoungeChat(String loungeId) {
+    if (!mounted) return;
+    final lounge = ref
+        .read(loungesProvider)
+        .lounges
+        .where((l) => l.id == loungeId)
+        .firstOrNull;
+    final name = lounge?.name ?? '';
+    context.push('/lounge-chat/$loungeId?name=${Uri.encodeComponent(name)}');
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
@@ -79,7 +97,11 @@ class _MainShellState extends ConsumerState<MainShell>
     // WS subscriptions never stop between tab switches.
     ref.watch(dashboardProvider);
     ref.watch(ordersProvider);
+    if (auth.canManageLounges) ref.watch(loungesProvider);
     final unreadCount = ref.watch(unreadMessagesProvider).length;
+    final loungeUnreadCount = auth.canManageLounges
+        ? ref.watch(loungeUnreadProvider).length
+        : 0;
 
     final tabs = [
       _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),
@@ -113,13 +135,18 @@ class _MainShellState extends ConsumerState<MainShell>
           currentIndex: currentIndex,
           onTap: (i) => context.go(tabs[i].path),
           items: tabs.map((t) {
-            final showBadge = t.path == '/orders' && unreadCount > 0;
+            final ordBadge = t.path == '/orders' && unreadCount > 0;
+            final loungeBadge =
+                t.path == '/lounges' && loungeUnreadCount > 0;
+            final badgeCount =
+                ordBadge ? unreadCount : (loungeBadge ? loungeUnreadCount : 0);
+            final showBadge = ordBadge || loungeBadge;
             return BottomNavigationBarItem(
               icon: showBadge
-                  ? Badge.count(count: unreadCount, child: Icon(t.icon))
+                  ? Badge.count(count: badgeCount, child: Icon(t.icon))
                   : Icon(t.icon),
               activeIcon: showBadge
-                  ? Badge.count(count: unreadCount, child: Icon(t.activeIcon))
+                  ? Badge.count(count: badgeCount, child: Icon(t.activeIcon))
                   : Icon(t.activeIcon),
               label: t.label,
             );

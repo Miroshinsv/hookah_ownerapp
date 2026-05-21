@@ -8,6 +8,8 @@ class StorageService {
   static const _unreadKey = 'unread_order_ids';
   static const _lastReadPrefix = 'last_read_';
   static const _notifMsgTsPrefix = 'fg_notif_msg_ts_';
+  static const _unreadLoungeChatKey = 'unread_lounge_chat_ids';
+  static const _loungeChatTsPrefix = 'fg_lounge_chat_ts_';
 
   final SharedPreferences _prefs;
 
@@ -73,6 +75,29 @@ class StorageService {
 
   Future<void> setNotifMsgTs(String orderId, DateTime ts) =>
       _prefs.setString('$_notifMsgTsPrefix$orderId', ts.toIso8601String());
+
+  // ── Lounge chat unread ───────────────────────────────────────────────────
+
+  Set<String> get unreadLoungeChatIds =>
+      _prefs.getStringList(_unreadLoungeChatKey)?.toSet() ?? {};
+
+  Future<void> markLoungeChatUnread(String loungeId) async {
+    final ids = unreadLoungeChatIds..add(loungeId);
+    await _prefs.setStringList(_unreadLoungeChatKey, ids.toList());
+  }
+
+  Future<void> markLoungeChatRead(String loungeId) async {
+    final ids = unreadLoungeChatIds..remove(loungeId);
+    await _prefs.setStringList(_unreadLoungeChatKey, ids.toList());
+  }
+
+  DateTime? loungeChatTs(String loungeId) {
+    final s = _prefs.getString('$_loungeChatTsPrefix$loungeId');
+    return s != null ? DateTime.tryParse(s) : null;
+  }
+
+  Future<void> setLoungeChatTs(String loungeId, DateTime ts) =>
+      _prefs.setString('$_loungeChatTsPrefix$loungeId', ts.toIso8601String());
 
   /// Reloads SharedPreferences from the platform store.
   /// Call this after the background service may have written unread state
