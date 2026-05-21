@@ -36,7 +36,7 @@ android {
 
     defaultConfig {
         applicationId = "ru.hookahorder.hookah_admin"
-        minSdk = flutter.minSdkVersion
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -72,4 +72,5 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    implementation("com.yandex.android:maps.mobile:4.22.0-lite")
 }
