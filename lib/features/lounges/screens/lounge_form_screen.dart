@@ -1,19 +1,28 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show Factory;
+import 'package:flutter/gestures.dart'
+    show EagerGestureRecognizer, OneSequenceGestureRecognizer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/utils/map_marker_utils.dart';
 import '../../../shared/models/staff_model.dart';
 import '../../../shared/widgets/loading_button.dart';
 import '../../staff/providers/staff_provider.dart';
 import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
 
-const String _kGeocoderApiKey = String.fromEnvironment('YANDEX_MAPS_API_KEY');
+const String _kGeocoderApiKey = String.fromEnvironment(
+  'YANDEX_GEOCODER_API_KEY',
+  defaultValue: '74eba148-1881-4fb8-b4a2-1e158e3fbc2f',
+);
 
 class LoungeFormScreen extends ConsumerStatefulWidget {
   final String? loungeId;
@@ -40,7 +49,10 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
   YandexMapController? _mapController;
   double? _lat;
   double? _lng;
+  final _dragCoords = ValueNotifier<(double, double)?>(null);
+  Timer? _dragDebounce;
   bool _loading = false;
+  BitmapDescriptor? _markerIcon;
   bool _searching = false;
   String? _deletingStaffId;
   List<Map<String, dynamic>> _searchResults = [];
@@ -57,6 +69,9 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
   @override
   void initState() {
     super.initState();
+    buildHookahMarkerBitmap().then((icon) {
+      if (mounted) setState(() => _markerIcon = icon);
+    });
     for (final d in _days) {
       _dayEnabled[d] = false;
       _dayOpen[d] = TextEditingController(text: '10:00');
@@ -117,10 +132,13 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
     for (final c in _dayClose.values) {
       c.dispose();
     }
+    _dragCoords.dispose();
+    _dragDebounce?.cancel();
     super.dispose();
   }
 
   Future<void> _reverseGeocode(double lat, double lng) async {
+    dev.log('geocode: request lat=$lat lng=$lng', name: 'Geocoder');
     try {
       final client = HttpClient();
       final req = await client.getUrl(Uri.parse(
@@ -131,18 +149,30 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
         '&lang=ru_RU',
       ));
       final resp = await req.close().timeout(const Duration(seconds: 10));
+      dev.log('geocode: status ${resp.statusCode}', name: 'Geocoder');
       final body = await resp.transform(utf8.decoder).join();
+      dev.log('geocode: body ${body.length > 300 ? body.substring(0, 300) : body}',
+          name: 'Geocoder');
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final members = (data['response']['GeoObjectCollection']['featureMember'] as List)
+      final collection =
+          ((data['response'] as Map?)?['GeoObjectCollection'] as Map?);
+      final members = ((collection?['featureMember']) as List? ?? [])
           .cast<Map<String, dynamic>>();
       if (members.isNotEmpty && mounted) {
         final geo = members.first['GeoObject'] as Map<String, dynamic>;
         final name = geo['name'] as String? ?? '';
         final desc = geo['description'] as String? ?? '';
         final addr = desc.isNotEmpty ? '$name, $desc' : name;
+        dev.log('geocode: result "$addr"', name: 'Geocoder');
         if (addr.isNotEmpty) setState(() => _shortAddrCtrl.text = addr);
+      } else {
+        dev.log('geocode: no results', name: 'Geocoder');
+        if (mounted) setState(() => _shortAddrCtrl.text = '');
       }
-    } catch (_) {}
+    } catch (e, st) {
+      dev.log('geocode: error $e', name: 'Geocoder', error: e, stackTrace: st);
+      if (mounted) setState(() => _shortAddrCtrl.text = '');
+    }
   }
 
   Future<void> _search() async {
@@ -162,7 +192,9 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
       final resp = await req.close().timeout(const Duration(seconds: 10));
       final body = await resp.transform(utf8.decoder).join();
       final data = jsonDecode(body) as Map<String, dynamic>;
-      final members = (data['response']['GeoObjectCollection']['featureMember'] as List)
+      final collection = ((data['response'] as Map?)
+              ?['GeoObjectCollection'] as Map?);
+      final members = ((collection?['featureMember']) as List? ?? [])
           .cast<Map<String, dynamic>>();
       final results = members.map((m) {
         final geo = m['GeoObject'] as Map<String, dynamic>;
@@ -283,14 +315,11 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
 
     final vars = <String, dynamic>{
       'name': _nameCtrl.text.trim(),
-      'description': _descCtrl.text.trim().isEmpty
-          ? null
-          : _descCtrl.text.trim(),
-      'phone': _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
-      'shortAddress':
-          _shortAddrCtrl.text.trim().isEmpty ? null : _shortAddrCtrl.text.trim(),
-      'latitude': _lat,
-      'longitude': _lng,
+      'description': _descCtrl.text.trim(),
+      'phone': _phoneCtrl.text.trim(),
+      'shortAddress': _shortAddrCtrl.text.trim(),
+      if (_lat != null) 'latitude': _lat,
+      if (_lng != null) 'longitude': _lng,
       'schedule': _buildSchedule(),
     };
 
@@ -363,6 +392,52 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
               onPressed: () => _deleteStaff(staff),
             ),
         ],
+      ),
+    );
+  }
+
+  void _onDragFinished() {
+    _dragCoords.value = null;
+    if (!mounted || _lat == null || _lng == null) return;
+    setState(() => _shortAddrCtrl.text = 'Определяем адрес…');
+    _reverseGeocode(_lat!, _lng!);
+  }
+
+  Future<void> _zoomIn() async {
+    if (_mapController == null) return;
+    final pos = await _mapController!.getCameraPosition();
+    _mapController!.moveCamera(
+      CameraUpdate.newCameraPosition(
+          CameraPosition(target: pos.target, zoom: pos.zoom + 1)),
+      animation:
+          const MapAnimation(type: MapAnimationType.smooth, duration: 0.2),
+    );
+  }
+
+  Future<void> _zoomOut() async {
+    if (_mapController == null) return;
+    final pos = await _mapController!.getCameraPosition();
+    _mapController!.moveCamera(
+      CameraUpdate.newCameraPosition(
+          CameraPosition(target: pos.target, zoom: pos.zoom - 1)),
+      animation:
+          const MapAnimation(type: MapAnimationType.smooth, duration: 0.2),
+    );
+  }
+
+  Widget _mapZoomButton(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 18, color: AppColors.text),
       ),
     );
   }
@@ -470,67 +545,115 @@ class _LoungeFormScreenState extends ConsumerState<LoungeFormScreen> {
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: SizedBox(
-                height: 180,
-                child: YandexMap(
-                  onMapCreated: (controller) async {
-                    _mapController = controller;
-                    if (_lat != null && _lng != null) {
-                      await controller.moveCamera(
-                        CameraUpdate.newCameraPosition(
-                          CameraPosition(
-                            target: Point(latitude: _lat!, longitude: _lng!),
-                            zoom: 15,
-                          ),
-                        ),
-                      );
-                    } else {
-                      await controller.moveCamera(
-                        CameraUpdate.newCameraPosition(
-                          const CameraPosition(
-                            target: Point(latitude: 55.7558, longitude: 37.6173),
-                            zoom: 10,
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                  mapObjects: _lat != null && _lng != null
-                      ? [
-                          PlacemarkMapObject(
-                            mapId: const MapObjectId('lounge'),
-                            point: Point(latitude: _lat!, longitude: _lng!),
-                            icon: PlacemarkIcon.single(
-                              PlacemarkIconStyle(
-                                image: BitmapDescriptor.fromAssetImage(
-                                    'assets/icon/hookah.png'),
-                                scale: 0.08,
+                height: 260,
+                child: Stack(
+                  children: [
+                    YandexMap(
+                      gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+                        Factory<OneSequenceGestureRecognizer>(
+                            () => EagerGestureRecognizer()),
+                      },
+                      onMapCreated: (controller) async {
+                        _mapController = controller;
+                        if (_lat != null && _lng != null) {
+                          await controller.moveCamera(
+                            CameraUpdate.newCameraPosition(
+                              CameraPosition(
+                                target:
+                                    Point(latitude: _lat!, longitude: _lng!),
+                                zoom: 15,
                               ),
                             ),
+                          );
+                        } else {
+                          await controller.moveCamera(
+                            CameraUpdate.newCameraPosition(
+                              const CameraPosition(
+                                target: Point(
+                                    latitude: 55.7558, longitude: 37.6173),
+                                zoom: 10,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      mapObjects:
+                          _lat != null && _lng != null && _markerIcon != null
+                              ? [
+                                  PlacemarkMapObject(
+                                    mapId: const MapObjectId('lounge'),
+                                    point: Point(
+                                        latitude: _lat!, longitude: _lng!),
+                                    isDraggable: true,
+                                    onDrag: (_, point) {
+                                      _lat = point.latitude;
+                                      _lng = point.longitude;
+                                      _dragCoords.value =
+                                          (point.latitude, point.longitude);
+                                      _dragDebounce?.cancel();
+                                      _dragDebounce = Timer(
+                                        const Duration(milliseconds: 600),
+                                        _onDragFinished,
+                                      );
+                                    },
+                                    onDragEnd: (_) {
+                                      _dragDebounce?.cancel();
+                                      _dragDebounce = null;
+                                      _onDragFinished();
+                                    },
+                                    icon: PlacemarkIcon.single(
+                                      PlacemarkIconStyle(
+                                        image: _markerIcon!,
+                                        scale: 0.6,
+                                      ),
+                                    ),
+                                  ),
+                                ]
+                              : [],
+                      onMapTap: _lat == null ? (point) {
+                        setState(() {
+                          _lat = point.latitude;
+                          _lng = point.longitude;
+                        });
+                        _mapController?.moveCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(target: point, zoom: 15),
                           ),
-                        ]
-                      : [],
-                  onMapTap: (point) {
-                    setState(() {
-                      _lat = point.latitude;
-                      _lng = point.longitude;
-                    });
-                    _mapController?.moveCamera(
-                      CameraUpdate.newCameraPosition(
-                        CameraPosition(target: point, zoom: 15),
+                        );
+                        _reverseGeocode(point.latitude, point.longitude);
+                      } : null,
+                    ),
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _mapZoomButton(Icons.add, _zoomIn),
+                          const SizedBox(height: 4),
+                          _mapZoomButton(Icons.remove, _zoomOut),
+                        ],
                       ),
-                    );
-                    _reverseGeocode(point.latitude, point.longitude);
-                  },
+                    ),
+                  ],
                 ),
               ),
             ),
             if (_lat != null && _lng != null)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  'Координаты: ${_lat!.toStringAsFixed(5)}, ${_lng!.toStringAsFixed(5)} · Нажмите для перемещения',
-                  style: const TextStyle(color: AppColors.muted, fontSize: 11),
-                ),
+              ValueListenableBuilder<(double, double)?>(
+                valueListenable: _dragCoords,
+                builder: (context, drag, child) {
+                  final lat = drag?.$1 ?? _lat!;
+                  final lng = drag?.$2 ?? _lng!;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Координаты: ${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)} · Удерживайте маркер чтобы переместить',
+                      style:
+                          const TextStyle(color: AppColors.muted, fontSize: 11),
+                    ),
+                  );
+                },
               )
             else
               const Padding(

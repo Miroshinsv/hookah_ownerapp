@@ -15,6 +15,12 @@ if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localProperties.load(FileInputStream(localPropertiesFile))
+}
+
 android {
     namespace = "ru.hookahorder.hookah_admin"
     compileSdk = flutter.compileSdkVersion
@@ -43,7 +49,12 @@ android {
         buildConfigField(
             "String",
             "YANDEX_MAPS_API_KEY",
-            "\"${System.getenv("YANDEX_MAPS_API_KEY") ?: ""}\""
+            "\"${System.getenv("YANDEX_MAPS_API_KEY") ?: localProperties.getProperty("yandexMapsApiKey", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "YANDEX_GEOCODER_API_KEY",
+            "\"${System.getenv("YANDEX_GEOCODER_API_KEY") ?: localProperties.getProperty("yandexGeocoderApiKey", "")}\""
         )
     }
 

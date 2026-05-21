@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/utils/map_marker_utils.dart';
 import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/lounge_photo_model.dart';
 import '../../../shared/models/staff_model.dart';
@@ -185,6 +186,15 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
   bool _togglingChat = false;
   bool _uploadingPhoto = false;
   String? _deletingPhotoId;
+  BitmapDescriptor? _markerIcon;
+
+  @override
+  void initState() {
+    super.initState();
+    buildHookahMarkerBitmap().then((icon) {
+      if (mounted) setState(() => _markerIcon = icon);
+    });
+  }
 
   Future<void> _delete() async {
     final confirm = await showDialog<bool>(
@@ -563,22 +573,23 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
                         ),
                       );
                     },
-                    mapObjects: [
-                      PlacemarkMapObject(
-                        mapId: const MapObjectId('lounge_detail'),
-                        point: Point(
-                          latitude: lounge.latitude!,
-                          longitude: lounge.longitude!,
-                        ),
-                        icon: PlacemarkIcon.single(
-                          PlacemarkIconStyle(
-                            image: BitmapDescriptor.fromAssetImage(
-                                'assets/icon/hookah.png'),
-                            scale: 0.08,
-                          ),
-                        ),
-                      ),
-                    ],
+                    mapObjects: _markerIcon != null
+                        ? [
+                            PlacemarkMapObject(
+                              mapId: const MapObjectId('lounge_detail'),
+                              point: Point(
+                                latitude: lounge.latitude!,
+                                longitude: lounge.longitude!,
+                              ),
+                              icon: PlacemarkIcon.single(
+                                PlacemarkIconStyle(
+                                  image: _markerIcon!,
+                                  scale: 0.6,
+                                ),
+                              ),
+                            ),
+                          ]
+                        : [],
                   ),
                 ),
               ),

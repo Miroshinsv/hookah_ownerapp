@@ -187,10 +187,10 @@ jobs:
             "$STORE_PASS" "$KEY_PASS" "$KEY_ALIAS" > android/app/key.properties
 
       - name: Build APK
-        run: flutter build apk --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.prepare.outputs.version }}
+        run: flutter build apk --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.prepare.outputs.version }} --dart-define=YANDEX_MAPS_API_KEY=${{ secrets.YANDEX_MAPS_API_KEY }} --dart-define=YANDEX_GEOCODER_API_KEY=${{ secrets.YANDEX_GEOCODER_API_KEY }}
 
       - name: Build AAB
-        run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.prepare.outputs.version }}
+        run: flutter build appbundle --release --dart-define=BASE_URL=https://api.hookahorder.ru --dart-define=APP_VERSION=${{ needs.prepare.outputs.version }} --dart-define=YANDEX_MAPS_API_KEY=${{ secrets.YANDEX_MAPS_API_KEY }} --dart-define=YANDEX_GEOCODER_API_KEY=${{ secrets.YANDEX_GEOCODER_API_KEY }}
 
       - name: Собрать артефакты в плоскую папку
         run: |
