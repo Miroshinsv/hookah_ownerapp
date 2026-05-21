@@ -3,6 +3,16 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // maps.mobile 4.22.0 requires Java 21 — apply to all Android modules including plugins
+    afterEvaluate {
+        extensions.findByType<com.android.build.gradle.BaseExtension>()?.apply {
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_21
+                targetCompatibility = JavaVersion.VERSION_21
+            }
+        }
+    }
 }
 
 val newBuildDir: Directory =
