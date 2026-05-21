@@ -69,10 +69,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
-        id: setup-java
         with:
           distribution: 'zulu'
           java-version: '21'
+
+      # Записываем путь к JDK 21 до того как flutter-action его перекроет
+      - name: Pin Gradle JDK to Java 21
+        run: echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
 
       # Устанавливает Android SDK + cmdline-tools + нужный NDK
       - name: Setup Android SDK
@@ -85,11 +88,6 @@ jobs:
         with:
           channel: 'stable'
           cache: true
-
-      # flutter-action перезаписывает JAVA_HOME на встроенный JDK 17 из Flutter SDK
-      # Восстанавливаем JDK 21 для корректной компиляции yandex_mapkit (maps.mobile 4.22.0)
-      - name: Restore JAVA_HOME to JDK 21
-        run: echo "JAVA_HOME=${{ steps.setup-java.outputs.path }}" >> $GITHUB_ENV
 
       # Gradle cache ускоряет повторные сборки
       - uses: actions/cache@v4
