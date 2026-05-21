@@ -73,9 +73,9 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
-      # Записываем путь к JDK 21 до того как flutter-action его перекроет
+      # Пишем в GITHUB_ENV — работает даже после того, как flutter-action перекроет JAVA_HOME
       - name: Pin Gradle JDK to Java 21
-        run: echo "org.gradle.java.home=$JAVA_HOME" >> android/gradle.properties
+        run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=$JAVA_HOME" >> $GITHUB_ENV
 
       # Устанавливает Android SDK + cmdline-tools + нужный NDK
       - name: Setup Android SDK
