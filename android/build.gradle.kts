@@ -12,6 +12,9 @@ allprojects {
                 targetCompatibility = JavaVersion.VERSION_21
             }
         }
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            kotlinOptions.jvmTarget = "21"
+        }
     }
 }
 
