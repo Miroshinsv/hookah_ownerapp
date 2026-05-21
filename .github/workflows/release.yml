@@ -69,13 +69,14 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
+        id: setup-java
         with:
           distribution: 'zulu'
           java-version: '21'
 
-      # Пишем в GITHUB_ENV — работает даже после того, как flutter-action перекроет JAVA_HOME
+      # steps.setup-java.outputs.path — точный путь к JDK 21, вычисляется до запуска shell
       - name: Pin Gradle JDK to Java 21
-        run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=$JAVA_HOME" >> $GITHUB_ENV
+        run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=${{ steps.setup-java.outputs.path }}" >> $GITHUB_ENV
 
       # Устанавливает Android SDK + cmdline-tools + нужный NDK
       - name: Setup Android SDK
