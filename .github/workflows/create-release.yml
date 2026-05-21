@@ -127,9 +127,13 @@ jobs:
           ref: ${{ needs.prepare.outputs.tag }}
 
       - uses: actions/setup-java@v4
+        id: setup-java
         with:
           distribution: 'zulu'
-          java-version: '17'
+          java-version: '21'
+
+      - name: Pin Gradle JDK to Java 21
+        run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=${{ steps.setup-java.outputs.path }}" >> $GITHUB_ENV
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
