@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
@@ -50,9 +51,13 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   String? _scheduleSelectedLoungeId;
   bool _loading = false;
   bool _savingSchedule = false;
+  bool _loadingSchedule = false;
+  bool _uploadingPhoto = false;
   bool _obscurePassword = true;
   String? _generatedPassword;
   bool _staffLoaded = false;
+  String? _photoUrl;
+  String? _loadedScheduleLoungeId;
 
   bool get _isEdit => widget.staffId != null;
 
@@ -90,7 +95,110 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
       if (loungeIds != null) {
         _selectedLoungeIds = List<String>.from(loungeIds);
       }
+      _photoUrl = m.photoUrl;
     });
+    final loungeId = _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
+    if (loungeId != null && widget.staffId != null) {
+      _loadScheduleForLounge(loungeId);
+    }
+  }
+
+  Future<void> _loadScheduleForLounge(String loungeId) async {
+    if (_loadedScheduleLoungeId == loungeId) return;
+    if (!mounted) return;
+    setState(() => _loadingSchedule = true);
+    final scheduleJson = await ref
+        .read(staffProvider.notifier)
+        .getStaffSchedule(widget.staffId!, loungeId);
+    if (!mounted) return;
+    _loadedScheduleLoungeId = loungeId;
+    if (scheduleJson != null && scheduleJson.isNotEmpty) {
+      try {
+        final map = jsonDecode(scheduleJson) as Map<String, dynamic>;
+        for (final d in _days) {
+          _workDays[d.$1] = map.containsKey(d.$1);
+          if (map.containsKey(d.$1)) {
+            _scheduleCtrl[d.$1]!.text = map[d.$1] as String;
+          }
+        }
+      } catch (_) {}
+    } else {
+      for (final d in _days) {
+        _workDays[d.$1] = false;
+      }
+    }
+    setState(() => _loadingSchedule = false);
+  }
+
+  Future<void> _pickAndUploadPhoto() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(top: 10, bottom: 4),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: AppColors.gold),
+              title: const Text('Галерея', style: TextStyle(color: AppColors.text)),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.gold),
+              title: const Text('Камера', style: TextStyle(color: AppColors.text)),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null || !mounted) return;
+
+    setState(() => _uploadingPhoto = true);
+    try {
+      final bytes = await file.readAsBytes();
+      final base64 = base64Encode(bytes);
+      final ext = file.name.split('.').last.toLowerCase();
+      final mimeType = switch (ext) {
+        'jpg' || 'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'webp' => 'image/webp',
+        _ => 'image/jpeg',
+      };
+      final err = await ref
+          .read(staffProvider.notifier)
+          .uploadStaffPhoto(widget.staffId!, base64, mimeType);
+      if (!mounted) return;
+      if (err != null) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+      } else {
+        final updated = ref
+            .read(staffProvider)
+            .staff
+            .where((s) => s.id == widget.staffId)
+            .firstOrNull;
+        if (updated != null) setState(() => _photoUrl = updated.photoUrl);
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingPhoto = false);
+    }
   }
 
   @override
@@ -246,6 +354,49 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (_isEdit) ...[
+              Center(
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 48,
+                      backgroundColor: AppColors.surface2,
+                      backgroundImage: _photoUrl != null
+                          ? NetworkImage(_photoUrl!)
+                          : null,
+                      child: _photoUrl == null
+                          ? const Icon(Icons.person, size: 40, color: AppColors.muted)
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: _uploadingPhoto
+                          ? const SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: AppColors.gold),
+                            )
+                          : GestureDetector(
+                              onTap: _pickAndUploadPhoto,
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.gold,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.camera_alt,
+                                    size: 16, color: Colors.black),
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
             if (!_isEdit) ...[
               TextFormField(
                 controller: _userIdCtrl,
@@ -500,8 +651,10 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                     style:
                         const TextStyle(color: AppColors.text, fontSize: 14),
                     decoration: const InputDecoration(isDense: true),
-                    onChanged: (v) =>
-                        setState(() => _scheduleSelectedLoungeId = v),
+                    onChanged: (v) {
+                      setState(() => _scheduleSelectedLoungeId = v);
+                      if (v != null) _loadScheduleForLounge(v);
+                    },
                     items: _selectedLoungeIds.map((id) {
                       final lounge =
                           lounges.where((l) => l.id == id).firstOrNull;
@@ -518,7 +671,16 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   style: TextStyle(color: AppColors.muted, fontSize: 11),
                 ),
                 const SizedBox(height: 10),
-                ..._days.map((d) {
+                if (_loadingSchedule)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.gold),
+                    ),
+                  ),
+                if (!_loadingSchedule)
+                  ..._days.map((d) {
                   final isWorking = _workDays[d.$1] ?? false;
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -572,7 +734,9 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 const SizedBox(height: 4),
                 LoadingButton(
                   label: 'Сохранить расписание',
-                  onPressed: scheduleLounge != null ? _saveSchedule : null,
+                  onPressed: scheduleLounge != null && !_loadingSchedule
+                      ? _saveSchedule
+                      : null,
                   loading: _savingSchedule,
                 ),
               ],

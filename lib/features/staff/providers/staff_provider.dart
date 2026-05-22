@@ -129,6 +129,42 @@ class StaffNotifier extends StateNotifier<StaffState> {
     }
   }
 
+  Future<String?> getStaffSchedule(String staffId, String loungeId) async {
+    try {
+      final result = await _client.query(QueryOptions(
+        document: gql(kStaffScheduleQuery),
+        variables: {'staffId': staffId, 'loungeId': loungeId},
+        fetchPolicy: FetchPolicy.networkOnly,
+      ));
+      if (result.hasException) return null;
+      return result.data?['staffSchedule']?['schedule'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<String?> uploadStaffPhoto(
+      String staffId, String imageBase64, String mimeType) async {
+    try {
+      final result = await _client.mutate(MutationOptions(
+        document: gql(kUploadStaffPhotoMutation),
+        variables: {
+          'staffId': staffId,
+          'imageBase64': imageBase64,
+          'mimeType': mimeType,
+        },
+      ));
+      if (result.hasException) {
+        return result.exception?.graphqlErrors.firstOrNull?.message ??
+            'Ошибка загрузки фото';
+      }
+      if (mounted) await fetch();
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   Future<String?> deleteStaff(String staffId) async {
     try {
       final result = await _client.mutate(MutationOptions(

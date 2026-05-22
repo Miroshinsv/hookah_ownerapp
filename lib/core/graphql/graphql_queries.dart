@@ -149,7 +149,24 @@ query Staff {
     lastName
     roles
     rating
+    photoUrl
   }
+}
+''';
+
+const kStaffScheduleQuery = r'''
+query StaffSchedule($staffId: String!, $loungeId: String!) {
+  staffSchedule(staffId: $staffId, loungeId: $loungeId) {
+    staffId
+    loungeId
+    schedule
+  }
+}
+''';
+
+const kUploadStaffPhotoMutation = r'''
+mutation UploadStaffPhoto($staffId: String!, $imageBase64: String!, $mimeType: String!) {
+  uploadStaffPhoto(staffId: $staffId, imageBase64: $imageBase64, mimeType: $mimeType)
 }
 ''';
 

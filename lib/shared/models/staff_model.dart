@@ -36,6 +36,7 @@ class StaffModel {
   final String? lastName;
   final List<StaffRole> roles;
   final double? rating;
+  final String? photoUrl;
 
   const StaffModel({
     required this.id,
@@ -46,6 +47,7 @@ class StaffModel {
     this.lastName,
     required this.roles,
     this.rating,
+    this.photoUrl,
   });
 
   factory StaffModel.fromJson(Map<String, dynamic> json) => StaffModel(
@@ -62,6 +64,7 @@ class StaffModel {
             .map((r) => StaffRoleX.fromString(r as String))
             .toList(),
         rating: (json['rating'] as num?)?.toDouble(),
+        photoUrl: json['photoUrl'] as String?,
       );
 
   String get fullName {
