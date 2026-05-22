@@ -49,12 +49,12 @@ android {
         buildConfigField(
             "String",
             "YANDEX_MAPS_API_KEY",
-            "\"${System.getenv("YANDEX_MAPS_API_KEY") ?: localProperties.getProperty("yandexMapsApiKey", "")}\""
+            "\"${System.getenv("YANDEX_MAPS_API_KEY")?.takeIf { it.isNotEmpty() } ?: localProperties.getProperty("yandexMapsApiKey", "")}\""
         )
         buildConfigField(
             "String",
             "YANDEX_GEOCODER_API_KEY",
-            "\"${System.getenv("YANDEX_GEOCODER_API_KEY") ?: localProperties.getProperty("yandexGeocoderApiKey", "")}\""
+            "\"${System.getenv("YANDEX_GEOCODER_API_KEY")?.takeIf { it.isNotEmpty() } ?: localProperties.getProperty("yandexGeocoderApiKey", "")}\""
         )
     }
 

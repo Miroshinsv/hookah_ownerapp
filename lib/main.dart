@@ -9,10 +9,9 @@ import 'core/storage/storage_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/providers/auth_provider.dart';
 
-const _kGeocoderApiKey = String.fromEnvironment(
-  'YANDEX_GEOCODER_API_KEY',
-  defaultValue: '74eba148-1881-4fb8-b4a2-1e158e3fbc2f',
-);
+const _kGeocoderKeyEnv = String.fromEnvironment('YANDEX_GEOCODER_API_KEY');
+const _kGeocoderApiKey =
+    _kGeocoderKeyEnv == '' ? '74eba148-1881-4fb8-b4a2-1e158e3fbc2f' : _kGeocoderKeyEnv;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -19,10 +19,11 @@ import '../../staff/providers/staff_provider.dart';
 import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
 
-const String _kGeocoderApiKey = String.fromEnvironment(
-  'YANDEX_GEOCODER_API_KEY',
-  defaultValue: '74eba148-1881-4fb8-b4a2-1e158e3fbc2f',
-);
+// String.fromEnvironment returns '' (not defaultValue) when --dart-define passes an empty string.
+// Guard against that case explicitly.
+const _kGeocoderKeyEnv = String.fromEnvironment('YANDEX_GEOCODER_API_KEY');
+const String _kGeocoderApiKey =
+    _kGeocoderKeyEnv == '' ? '74eba148-1881-4fb8-b4a2-1e158e3fbc2f' : _kGeocoderKeyEnv;
 
 class LoungeFormScreen extends ConsumerStatefulWidget {
   final String? loungeId;
