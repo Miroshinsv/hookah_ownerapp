@@ -74,8 +74,9 @@ class _UpdateSheetState extends State<_UpdateSheet> {
       await sink.close();
 
       if (!mounted) return;
-      Navigator.of(context).pop();
       await ApkInstaller.install(file.path);
+      if (!mounted) return;
+      Navigator.of(context).pop();
     } catch (_) {
       if (mounted) setState(() => _progress = -1);
     } finally {
