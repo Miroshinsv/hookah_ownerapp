@@ -36,7 +36,7 @@ class LoungesScreen extends ConsumerWidget {
           ),
         ],
       ),
-      floatingActionButton: auth.isAdmin
+      floatingActionButton: auth.canManageLounges
           ? FloatingActionButton(
               onPressed: () => context.push('/lounge-form'),
               child: const Icon(Icons.add),
