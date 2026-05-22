@@ -312,7 +312,10 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         .read(staffProvider.notifier)
         .setStaffSchedule(widget.staffId!, loungeId, jsonEncode(map));
     if (!mounted) return;
-    setState(() => _savingSchedule = false);
+    setState(() {
+      _savingSchedule = false;
+      if (err == null) _loadedScheduleLoungeId = null;
+    });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(err ?? 'Расписание сохранено')),
     );

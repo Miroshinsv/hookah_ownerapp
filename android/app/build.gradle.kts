@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.util.Base64
 import java.io.FileInputStream
 
 plugins {
@@ -20,6 +21,19 @@ val localPropertiesFile = rootProject.file("local.properties")
 if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
+
+// Flutter записывает --dart-define значения в local.properties как base64-строки через запятую
+fun dartDefines(): Map<String, String> {
+    val raw = localProperties.getProperty("dart.defines") ?: return emptyMap()
+    return raw.split(",").associate { entry ->
+        val decoded = String(Base64.getDecoder().decode(entry))
+        val idx = decoded.indexOf('=')
+        if (idx >= 0) decoded.substring(0, idx) to decoded.substring(idx + 1)
+        else decoded to ""
+    }
+}
+
+val dartDefines = dartDefines()
 
 android {
     namespace = "ru.hookahorder.hookah_admin"
@@ -49,12 +63,12 @@ android {
         buildConfigField(
             "String",
             "YANDEX_MAPS_API_KEY",
-            "\"${System.getenv("YANDEX_MAPS_API_KEY")?.takeIf { it.isNotEmpty() } ?: localProperties.getProperty("yandexMapsApiKey", "")}\""
+            "\"${dartDefines["YANDEX_MAPS_API_KEY"] ?: ""}\""
         )
         buildConfigField(
             "String",
             "YANDEX_GEOCODER_API_KEY",
-            "\"${System.getenv("YANDEX_GEOCODER_API_KEY")?.takeIf { it.isNotEmpty() } ?: localProperties.getProperty("yandexGeocoderApiKey", "")}\""
+            "\"${dartDefines["YANDEX_GEOCODER_API_KEY"] ?: ""}\""
         )
     }
 
