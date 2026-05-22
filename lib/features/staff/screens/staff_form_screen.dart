@@ -57,6 +57,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   String? _generatedPassword;
   bool _staffLoaded = false;
   String? _photoUrl;
+  int _photoVersion = 0;
   String? _loadedScheduleLoungeId;
 
   bool get _isEdit => widget.staffId != null;
@@ -194,7 +195,12 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
             .staff
             .where((s) => s.id == widget.staffId)
             .firstOrNull;
-        if (updated != null) setState(() => _photoUrl = updated.photoUrl);
+        if (updated != null) {
+          setState(() {
+            _photoUrl = updated.photoUrl;
+            _photoVersion++;
+          });
+        }
       }
     } finally {
       if (mounted) setState(() => _uploadingPhoto = false);
@@ -362,7 +368,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                       radius: 48,
                       backgroundColor: AppColors.surface2,
                       backgroundImage: _photoUrl != null
-                          ? NetworkImage(_photoUrl!)
+                          ? NetworkImage('$_photoUrl?v=$_photoVersion')
                           : null,
                       child: _photoUrl == null
                           ? const Icon(Icons.person, size: 40, color: AppColors.muted)

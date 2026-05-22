@@ -64,9 +64,23 @@ jobs:
     env:
       JAVA_TOOL_OPTIONS: "-Xmx4g"
       YANDEX_MAPS_API_KEY: ${{ secrets.YANDEX_MAPS_API_KEY }}
+      YANDEX_GEOCODER_API_KEY: ${{ secrets.YANDEX_GEOCODER_API_KEY }}
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Проверить наличие secrets
+        run: |
+          if [ -z "$YANDEX_MAPS_API_KEY" ]; then
+            echo "::error::YANDEX_MAPS_API_KEY secret is not set or empty"
+            exit 1
+          fi
+          if [ -z "$YANDEX_GEOCODER_API_KEY" ]; then
+            echo "::error::YANDEX_GEOCODER_API_KEY secret is not set or empty"
+            exit 1
+          fi
+          echo "Maps key length: ${#YANDEX_MAPS_API_KEY}"
+          echo "Geocoder key length: ${#YANDEX_GEOCODER_API_KEY}"
 
       - uses: actions/setup-java@v4
         id: setup-java
