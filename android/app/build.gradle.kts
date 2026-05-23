@@ -22,9 +22,13 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
-// Flutter записывает --dart-define значения в local.properties как base64-строки через запятую
+// Flutter 3.x передаёт --dart-define значения через Gradle project property 'dart-defines'
+// (с дефисом), а НЕ через local.properties 'dart.defines' (с точкой).
+// Старый подход (local.properties) оставлен как запасной вариант для совместимости.
 fun dartDefines(): Map<String, String> {
-    val raw = localProperties.getProperty("dart.defines") ?: return emptyMap()
+    val raw = (project.findProperty("dart-defines") as? String)
+        ?: localProperties.getProperty("dart.defines")
+        ?: return emptyMap()
     return raw.split(",").associate { entry ->
         val decoded = String(Base64.getDecoder().decode(entry))
         val idx = decoded.indexOf('=')
