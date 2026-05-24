@@ -17,8 +17,16 @@ import '../providers/staff_provider.dart';
 class StaffFormScreen extends ConsumerStatefulWidget {
   final String? staffId;
   final String? preselectedLoungeId;
+  /// Начальные данные сотрудника — если переданы, форма заполняется сразу,
+  /// не ожидая загрузки staffProvider.
+  final StaffModel? initialStaff;
 
-  const StaffFormScreen({super.key, this.staffId, this.preselectedLoungeId});
+  const StaffFormScreen({
+    super.key,
+    this.staffId,
+    this.preselectedLoungeId,
+    this.initialStaff,
+  });
 
   @override
   ConsumerState<StaffFormScreen> createState() => _StaffFormScreenState();
@@ -73,18 +81,22 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
       _selectedLoungeIds = [widget.preselectedLoungeId!];
     }
     if (_isEdit) {
-      // Try to populate from already-loaded state after first frame
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _populateFromState(ref.read(staffProvider));
-      });
+      if (widget.initialStaff != null) {
+        // Данные переданы напрямую — заполняем сразу без ожидания провайдера
+        _applyStaffModel(widget.initialStaff!);
+      } else {
+        // Фолбэк: попробовать достать из уже загруженного провайдера
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _populateFromState(ref.read(staffProvider));
+        });
+      }
     }
   }
 
-  void _populateFromState(StaffState state) {
-    if (_staffLoaded || state.staff.isEmpty) return;
-    final m = state.staff.where((s) => s.id == widget.staffId).firstOrNull;
-    if (m == null) return;
+  /// Заполняет поля формы из модели сотрудника.
+  void _applyStaffModel(StaffModel m) {
+    if (_staffLoaded) return;
     _staffLoaded = true;
     final loungeIds = m.loungeIds.isNotEmpty
         ? m.loungeIds
@@ -102,6 +114,13 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     if (loungeId != null && widget.staffId != null) {
       _loadScheduleForLounge(loungeId);
     }
+  }
+
+  void _populateFromState(StaffState state) {
+    if (_staffLoaded || state.staff.isEmpty) return;
+    final m = state.staff.where((s) => s.id == widget.staffId).firstOrNull;
+    if (m == null) return;
+    _applyStaffModel(m);
   }
 
   Future<void> _loadScheduleForLounge(String loungeId) async {
