@@ -154,6 +154,27 @@ query Staff {
 }
 ''';
 
+const kStaffProfileQuery = r'''
+query StaffProfile($staffId: String!) {
+  staffProfile(staffId: $staffId) {
+    id
+    userId
+    firstName
+    lastName
+    bio
+    photoUrl
+    roles
+    rating
+    lounges {
+      loungeId
+      name
+      shortAddress
+      schedule
+    }
+  }
+}
+''';
+
 const kStaffScheduleQuery = r'''
 query StaffSchedule($staffId: String!, $loungeId: String!) {
   staffSchedule(staffId: $staffId, loungeId: $loungeId) {

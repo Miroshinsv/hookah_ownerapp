@@ -15,6 +15,7 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../chat/screens/lounge_chat_screen.dart';
 import '../../staff/providers/staff_provider.dart';
+import '../../staff/screens/staff_detail_screen.dart';
 import '../../staff/screens/staff_form_screen.dart';
 import '../providers/lounges_provider.dart';
 
@@ -289,6 +290,17 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
     ).then((_) {
       if (mounted) ref.read(loungesProvider.notifier).fetch();
     });
+  }
+
+  void _navigateToStaffDetail(StaffModel staff) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => UncontrolledProviderScope(
+          container: ProviderScope.containerOf(context),
+          child: StaffDetailScreen(staffId: staff.id),
+        ),
+      ),
+    );
   }
 
   Future<void> _toggleMedia(LoungeModel lounge, bool enabled) async {
@@ -665,6 +677,7 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
                   staff: s,
                   canManage: canManageStaff,
                   deleting: _deletingStaffId == s.id,
+                  onTap: () => _navigateToStaffDetail(s),
                   onEdit: () => _navigateToEditStaff(s),
                   onDelete: () => _deleteStaff(s),
                 ),
@@ -826,20 +839,23 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
             const SizedBox(height: 8),
           ],
 
-          // Open lounge chat button (for all roles if chatEnabled)
-          if (lounge.chatEnabled) ...[
-            OutlinedButton.icon(
-              onPressed: () => _openLoungeChat(lounge),
-              icon: const Icon(Icons.chat_bubble_outline, size: 18),
-              label: const Text('Открыть чат заведения'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.gold,
-                side: const BorderSide(color: AppColors.gold),
-                minimumSize: const Size.fromHeight(40),
+          // Open lounge chat button (disabled when chat is not connected)
+          OutlinedButton.icon(
+            onPressed: lounge.chatEnabled ? () => _openLoungeChat(lounge) : null,
+            icon: const Icon(Icons.chat_bubble_outline, size: 18),
+            label: Text(lounge.chatEnabled
+                ? 'Написать заведению'
+                : 'Написать заведению (не подключено)'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor:
+                  lounge.chatEnabled ? AppColors.gold : AppColors.muted,
+              side: BorderSide(
+                color: lounge.chatEnabled ? AppColors.gold : AppColors.border,
               ),
+              minimumSize: const Size.fromHeight(40),
             ),
-            const SizedBox(height: 16),
-          ],
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );
@@ -871,6 +887,7 @@ class _StaffTile extends StatelessWidget {
   final StaffModel staff;
   final bool canManage;
   final bool deleting;
+  final VoidCallback? onTap;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
 
@@ -878,6 +895,7 @@ class _StaffTile extends StatelessWidget {
     required this.staff,
     this.canManage = false,
     this.deleting = false,
+    this.onTap,
     this.onEdit,
     this.onDelete,
   });
@@ -886,60 +904,66 @@ class _StaffTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: EdgeInsets.only(
-        left: 12,
-        right: canManage ? 4 : 12,
-        top: 8,
-        bottom: 8,
-      ),
       decoration: BoxDecoration(
         color: AppColors.surface2,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.person_outline, size: 16, color: AppColors.muted),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              staff.fullName,
-              style: const TextStyle(color: AppColors.text, fontSize: 13),
-            ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 12,
+            right: canManage ? 4 : 12,
+            top: 8,
+            bottom: 8,
           ),
-          Text(
-            staff.rolesLabel(isAdmin: true),
-            style: const TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
-          if (canManage) ...[
-            const SizedBox(width: 4),
-            IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-              iconSize: 16,
-              icon: const Icon(Icons.edit_outlined, color: AppColors.muted),
-              onPressed: onEdit,
-            ),
-            if (deleting)
-              const SizedBox(
-                width: 28,
-                height: 28,
-                child: Padding(
-                  padding: EdgeInsets.all(6),
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: AppColors.red),
+          child: Row(
+            children: [
+              const Icon(Icons.person_outline, size: 16, color: AppColors.muted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  staff.fullName,
+                  style: const TextStyle(color: AppColors.text, fontSize: 13),
                 ),
-              )
-            else
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                iconSize: 16,
-                icon: const Icon(Icons.person_remove_outlined,
-                    color: AppColors.red),
-                onPressed: onDelete,
               ),
-          ],
-        ],
+              Text(
+                staff.rolesLabel(isAdmin: true),
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+              if (canManage) ...[
+                const SizedBox(width: 4),
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  iconSize: 16,
+                  icon: const Icon(Icons.edit_outlined, color: AppColors.muted),
+                  onPressed: onEdit,
+                ),
+                if (deleting)
+                  const SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: Padding(
+                      padding: EdgeInsets.all(6),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.red),
+                    ),
+                  )
+                else
+                  IconButton(
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                    iconSize: 16,
+                    icon: const Icon(Icons.person_remove_outlined,
+                        color: AppColors.red),
+                    onPressed: onDelete,
+                  ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -993,8 +1017,12 @@ class _InfoRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 15, color: AppColors.muted),
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: Icon(icon, size: 15, color: AppColors.muted),
+        ),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
