@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+/// Возвращает null если строка null или пустая — нормализует ответ бэкенда.
+String? _nonEmpty(String? v) => (v == null || v.isEmpty) ? null : v;
+
 enum StaffRole { hookahMaster, hostess, waiter, owner, admin }
 
 extension StaffRoleX on StaffRole {
@@ -66,7 +69,8 @@ class StaffModel {
             .map((r) => StaffRoleX.fromString(r as String))
             .toList(),
         rating: (json['rating'] as num?)?.toDouble(),
-        photoUrl: json['photoUrl'] as String?,
+        // Нормализуем "" → null: бэкенд может вернуть пустую строку вместо null
+        photoUrl: _nonEmpty(json['photoUrl'] as String?),
       );
 
   String get fullName {
@@ -150,8 +154,8 @@ class StaffProfileModel {
         userId: json['userId'] as String?,
         firstName: json['firstName'] as String?,
         lastName: json['lastName'] as String?,
-        bio: json['bio'] as String?,
-        photoUrl: json['photoUrl'] as String?,
+        bio: _nonEmpty(json['bio'] as String?),
+        photoUrl: _nonEmpty(json['photoUrl'] as String?),
         roles: ((json['roles'] as List<dynamic>?) ?? [])
             .map((r) => StaffRoleX.fromString(r as String))
             .toList(),

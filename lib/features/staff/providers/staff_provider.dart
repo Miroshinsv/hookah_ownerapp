@@ -57,20 +57,23 @@ class StaffNotifier extends StateNotifier<StaffState> {
     }
   }
 
-  Future<String?> createStaff(Map<String, dynamic> vars) async {
+  /// Возвращает (errorMessage, staffId). При успехе errorMessage == null.
+  Future<(String?, String?)> createStaff(Map<String, dynamic> vars) async {
     try {
       final result = await _client.mutate(MutationOptions(
         document: gql(kCreateStaffMutation),
         variables: vars,
       ));
       if (result.hasException) {
-        return result.exception?.graphqlErrors.firstOrNull?.message ??
+        final msg = result.exception?.graphqlErrors.firstOrNull?.message ??
             'Ошибка создания';
+        return (msg, null);
       }
+      final staffId = result.data?['createStaff']?['id'] as String?;
       if (mounted) await fetch();
-      return null;
+      return (null, staffId);
     } catch (e) {
-      return e.toString();
+      return (e.toString(), null);
     }
   }
 
@@ -137,7 +140,16 @@ class StaffNotifier extends StateNotifier<StaffState> {
         fetchPolicy: FetchPolicy.networkOnly,
       ));
       if (result.hasException) return null;
-      return result.data?['staffSchedule']?['schedule'] as String?;
+      // Сервер возвращает массив — берём первый элемент
+      final raw = result.data?['staffSchedule'];
+      if (raw is List && raw.isNotEmpty) {
+        return raw.first['schedule'] as String?;
+      }
+      // На случай если API вернёт объект (а не массив)
+      if (raw is Map) {
+        return raw['schedule'] as String?;
+      }
+      return null;
     } catch (_) {
       return null;
     }

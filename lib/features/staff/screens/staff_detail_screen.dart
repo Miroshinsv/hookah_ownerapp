@@ -160,11 +160,12 @@ class _ProfileBody extends StatelessWidget {
         CircleAvatar(
           radius: 52,
           backgroundColor: AppColors.surface2,
-          backgroundImage:
-              profile.photoUrl != null ? NetworkImage(profile.photoUrl!) : null,
-          child: profile.photoUrl == null
-              ? const Icon(Icons.person, size: 44, color: AppColors.muted)
+          backgroundImage: (profile.photoUrl?.isNotEmpty ?? false)
+              ? NetworkImage(profile.photoUrl!)
               : null,
+          child: (profile.photoUrl?.isNotEmpty ?? false)
+              ? null
+              : const Icon(Icons.person, size: 44, color: AppColors.muted),
         ),
         const SizedBox(height: 12),
 

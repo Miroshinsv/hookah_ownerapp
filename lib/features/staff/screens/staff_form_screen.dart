@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
@@ -17,6 +18,7 @@ import '../providers/staff_provider.dart';
 class StaffFormScreen extends ConsumerStatefulWidget {
   final String? staffId;
   final String? preselectedLoungeId;
+
   /// Начальные данные сотрудника — если переданы, форма заполняется сразу,
   /// не ожидая загрузки staffProvider.
   final StaffModel? initialStaff;
@@ -47,6 +49,11 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _userIdCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _phoneFormatter = MaskTextInputFormatter(
+    mask: '+7 ### ###-##-##',
+    filter: {'#': RegExp(r'\d')},
+    type: MaskAutoCompletionType.lazy,
+  );
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _loungeSearchCtrl = TextEditingController();
@@ -67,25 +74,30 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   String? _photoUrl;
   int _photoVersion = 0;
   String? _loadedScheduleLoungeId;
+  // Для создания: локально выбранное фото (до загрузки на сервер)
+  XFile? _pendingPhotoFile;
+  Uint8List? _pendingPhotoBytes;
 
   bool get _isEdit => widget.staffId != null;
+  bool get _needsLounge => _selectedRoles.any((r) => r != 'admin');
 
   @override
   void initState() {
     super.initState();
     _scheduleCtrl = {
-      for (final d in _days) d.$1: TextEditingController(text: _defaultTime)
+      for (final d in _days) d.$1: TextEditingController(text: _defaultTime),
     };
     _workDays = {for (final d in _days) d.$1: false};
     if (widget.preselectedLoungeId != null) {
       _selectedLoungeIds = [widget.preselectedLoungeId!];
     }
     if (_isEdit) {
+      // Сразу показываем спиннер — данные ещё не загружены
+      _loadingSchedule = true;
       if (widget.initialStaff != null) {
-        // Данные переданы напрямую — заполняем сразу без ожидания провайдера
         _applyStaffModel(widget.initialStaff!);
       } else {
-        // Фолбэк: попробовать достать из уже загруженного провайдера
+        // Данные не переданы — попробуем взять из провайдера после первого фрейма
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _populateFromState(ref.read(staffProvider));
@@ -94,7 +106,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     }
   }
 
-  /// Заполняет поля формы из модели сотрудника.
+  // ──────────────────────────── staff data ────────────────────────────
+
   void _applyStaffModel(StaffModel m) {
     if (_staffLoaded) return;
     _staffLoaded = true;
@@ -109,10 +122,16 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         _selectedLoungeIds = List<String>.from(loungeIds);
       }
       _photoUrl = m.photoUrl;
+      // Держим спиннер до окончания загрузки расписания
+      _loadingSchedule = true;
     });
-    final loungeId = _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
+    final loungeId =
+        _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
     if (loungeId != null && widget.staffId != null) {
       _loadScheduleForLounge(loungeId);
+    } else {
+      // Нет кальянной — убираем спиннер
+      setState(() => _loadingSchedule = false);
     }
   }
 
@@ -123,15 +142,30 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     _applyStaffModel(m);
   }
 
+  // ──────────────────────────── schedule ────────────────────────────
+
   Future<void> _loadScheduleForLounge(String loungeId) async {
     if (_loadedScheduleLoungeId == loungeId) return;
     if (!mounted) return;
-    setState(() => _loadingSchedule = true);
+
+    // Сбрасываем в исходное состояние перед загрузкой
+    setState(() {
+      _loadingSchedule = true;
+      for (final d in _days) {
+        _workDays[d.$1] = false;
+      }
+    });
+    for (final d in _days) {
+      _scheduleCtrl[d.$1]!.text = _defaultTime;
+    }
+
     final scheduleJson = await ref
         .read(staffProvider.notifier)
         .getStaffSchedule(widget.staffId!, loungeId);
+
     if (!mounted) return;
-    _loadedScheduleLoungeId = loungeId;
+
+    // Применяем данные с сервера
     if (scheduleJson != null && scheduleJson.isNotEmpty) {
       try {
         final map = jsonDecode(scheduleJson) as Map<String, dynamic>;
@@ -142,15 +176,64 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
           }
         }
       } catch (_) {}
-    } else {
-      for (final d in _days) {
-        _workDays[d.$1] = false;
-      }
     }
-    setState(() => _loadingSchedule = false);
+
+    setState(() {
+      _loadedScheduleLoungeId = loungeId;
+      _loadingSchedule = false;
+    });
   }
 
-  Future<void> _pickAndUploadPhoto() async {
+  /// Сохраняет расписание для одной кальянной (режим редактирования).
+  Future<void> _saveSchedule() async {
+    final loungeId =
+        _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
+    if (loungeId == null || widget.staffId == null) return;
+
+    final map = _buildScheduleMap();
+    setState(() => _savingSchedule = true);
+    final err = await ref
+        .read(staffProvider.notifier)
+        .setStaffSchedule(widget.staffId!, loungeId, jsonEncode(map));
+    if (!mounted) return;
+    setState(() {
+      _savingSchedule = false;
+      if (err == null) _loadedScheduleLoungeId = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(err ?? 'Расписание сохранено')),
+    );
+  }
+
+  /// Сохраняет расписание для всех выбранных кальянных (режим создания).
+  Future<void> _saveScheduleForNewStaff(String staffId) async {
+    final map = _buildScheduleMap();
+    if (map.isEmpty) return;
+    final scheduleJson = jsonEncode(map);
+    for (final loungeId in _selectedLoungeIds) {
+      await ref
+          .read(staffProvider.notifier)
+          .setStaffSchedule(staffId, loungeId, scheduleJson);
+    }
+  }
+
+  Map<String, String> _buildScheduleMap() {
+    final map = <String, String>{};
+    for (final d in _days) {
+      if (_workDays[d.$1] == true) {
+        final v = _scheduleCtrl[d.$1]!.text.trim();
+        map[d.$1] = v.isNotEmpty ? v : _defaultTime;
+      }
+    }
+    return map;
+  }
+
+  bool get _hasAnySchedule => _workDays.values.any((v) => v);
+
+  // ──────────────────────────── photo ────────────────────────────
+
+  /// Показывает боттом-шит выбора источника и возвращает файл.
+  Future<XFile?> _pickImageFile() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       backgroundColor: AppColors.surface,
@@ -171,13 +254,17 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.photo_library_outlined, color: AppColors.gold),
-              title: const Text('Галерея', style: TextStyle(color: AppColors.text)),
+              leading: const Icon(Icons.photo_library_outlined,
+                  color: AppColors.gold),
+              title: const Text('Галерея',
+                  style: TextStyle(color: AppColors.text)),
               onTap: () => Navigator.pop(ctx, ImageSource.gallery),
             ),
             ListTile(
-              leading: const Icon(Icons.camera_alt_outlined, color: AppColors.gold),
-              title: const Text('Камера', style: TextStyle(color: AppColors.text)),
+              leading: const Icon(Icons.camera_alt_outlined,
+                  color: AppColors.gold),
+              title: const Text('Камера',
+                  style: TextStyle(color: AppColors.text)),
               onTap: () => Navigator.pop(ctx, ImageSource.camera),
             ),
             const SizedBox(height: 8),
@@ -185,10 +272,14 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         ),
       ),
     );
-    if (source == null || !mounted) return;
-
+    if (source == null || !mounted) return null;
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, imageQuality: 85);
+    return picker.pickImage(source: source, imageQuality: 85);
+  }
+
+  /// Режим редактирования: сразу загружаем фото на сервер.
+  Future<void> _pickAndUploadPhoto() async {
+    final file = await _pickImageFile();
     if (file == null || !mounted) return;
 
     setState(() => _uploadingPhoto = true);
@@ -207,7 +298,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
           .uploadStaffPhoto(widget.staffId!, base64, mimeType);
       if (!mounted) return;
       if (err != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(err)));
       } else {
         final updated = ref
             .read(staffProvider)
@@ -225,6 +317,37 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
       if (mounted) setState(() => _uploadingPhoto = false);
     }
   }
+
+  /// Режим создания: сохраняем фото локально для предпросмотра.
+  Future<void> _pickPhotoForCreate() async {
+    final file = await _pickImageFile();
+    if (file == null || !mounted) return;
+    final Uint8List bytes = await file.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _pendingPhotoFile = file;
+      _pendingPhotoBytes = bytes;
+    });
+  }
+
+  /// Загружает локально выбранное фото после успешного создания сотрудника.
+  Future<void> _uploadPendingPhoto(String staffId) async {
+    final file = _pendingPhotoFile;
+    final bytes = _pendingPhotoBytes;
+    if (file == null || bytes == null) return;
+    final ext = file.name.split('.').last.toLowerCase();
+    final mimeType = switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'webp' => 'image/webp',
+      _ => 'image/jpeg',
+    };
+    await ref
+        .read(staffProvider.notifier)
+        .uploadStaffPhoto(staffId, base64Encode(bytes), mimeType);
+  }
+
+  // ──────────────────────────── misc ────────────────────────────
 
   @override
   void dispose() {
@@ -251,95 +374,6 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     });
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
-
-    setState(() => _loading = true);
-
-    String? err;
-
-    if (_isEdit) {
-      final vars = <String, dynamic>{
-        'staffId': widget.staffId,
-        'firstName': _firstNameCtrl.text.trim().isEmpty
-            ? null
-            : _firstNameCtrl.text.trim(),
-        'lastName': _lastNameCtrl.text.trim().isEmpty
-            ? null
-            : _lastNameCtrl.text.trim(),
-        'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
-        'loungeIds': _selectedLoungeIds,
-      };
-      if (_passwordCtrl.text.isNotEmpty) {
-        vars['password'] = _passwordCtrl.text;
-      }
-      err = await ref.read(staffProvider.notifier).updateStaff(vars);
-    } else {
-      if (_selectedRoles.length == 1 && _selectedRoles.first == 'admin') {
-        err = await ref.read(staffProvider.notifier).createAdmin({
-          'userId': _userIdCtrl.text.trim(),
-          'password': _passwordCtrl.text,
-          'firstName': _firstNameCtrl.text.trim().isEmpty
-              ? null
-              : _firstNameCtrl.text.trim(),
-          'lastName': _lastNameCtrl.text.trim().isEmpty
-              ? null
-              : _lastNameCtrl.text.trim(),
-        });
-      } else {
-        err = await ref.read(staffProvider.notifier).createStaff({
-          'userId': _userIdCtrl.text.trim(),
-          'password': _passwordCtrl.text,
-          'loungeIds': _selectedLoungeIds,
-          'firstName': _firstNameCtrl.text.trim().isEmpty
-              ? null
-              : _firstNameCtrl.text.trim(),
-          'lastName': _lastNameCtrl.text.trim().isEmpty
-              ? null
-              : _lastNameCtrl.text.trim(),
-          'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
-        });
-      }
-    }
-
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    if (err != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(err)));
-    } else {
-      Navigator.of(context).maybePop();
-    }
-  }
-
-  Future<void> _saveSchedule() async {
-    final loungeId =
-        _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
-    if (loungeId == null || widget.staffId == null) return;
-
-    final map = <String, String>{};
-    for (final d in _days) {
-      if (_workDays[d.$1] == true) {
-        final v = _scheduleCtrl[d.$1]!.text.trim();
-        map[d.$1] = v.isNotEmpty ? v : _defaultTime;
-      }
-    }
-
-    setState(() => _savingSchedule = true);
-    final err = await ref
-        .read(staffProvider.notifier)
-        .setStaffSchedule(widget.staffId!, loungeId, jsonEncode(map));
-    if (!mounted) return;
-    setState(() {
-      _savingSchedule = false;
-      if (err == null) _loadedScheduleLoungeId = null;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(err ?? 'Расписание сохранено')),
-    );
-  }
-
   List<(String, String)> _availableRoles() {
     final auth = ref.read(authProvider);
     final roles = [
@@ -354,17 +388,143 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     return roles.take(3).toList();
   }
 
-  bool get _needsLounge => _selectedRoles.any((r) => r != 'admin');
+  // ──────────────────────────── submit ────────────────────────────
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _loading = true);
+
+    String? err;
+
+    if (_isEdit) {
+      // password всегда передаём явно: null = не менять, строка = сменить.
+      // graphql_flutter beta инлайнит переменные — если ключ отсутствует,
+      // $password остаётся неразрешённым в теле запроса → ошибка сервера.
+      final vars = <String, dynamic>{
+        'staffId': widget.staffId,
+        'firstName': _firstNameCtrl.text.trim(),
+        'lastName': _lastNameCtrl.text.trim(),
+        'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
+        'loungeIds': _selectedLoungeIds,
+        'password': _passwordCtrl.text.isNotEmpty ? _passwordCtrl.text : null,
+      };
+      err = await ref.read(staffProvider.notifier).updateStaff(vars);
+    } else {
+      // Убираем пробелы и дефисы из маски → +79855318700
+      final phone = _userIdCtrl.text.replaceAll(RegExp(r'[\s\-]'), '');
+
+      if (_selectedRoles.length == 1 && _selectedRoles.first == 'admin') {
+        err = await ref.read(staffProvider.notifier).createAdmin({
+          'userId': phone,
+          'password': _passwordCtrl.text,
+          'firstName': _firstNameCtrl.text.trim().isEmpty
+              ? null
+              : _firstNameCtrl.text.trim(),
+          'lastName': _lastNameCtrl.text.trim().isEmpty
+              ? null
+              : _lastNameCtrl.text.trim(),
+        });
+      } else {
+        final (createErr, staffId) =
+            await ref.read(staffProvider.notifier).createStaff({
+          'userId': phone,
+          'password': _passwordCtrl.text,
+          'loungeIds': _selectedLoungeIds,
+          'firstName': _firstNameCtrl.text.trim().isEmpty
+              ? null
+              : _firstNameCtrl.text.trim(),
+          'lastName': _lastNameCtrl.text.trim().isEmpty
+              ? null
+              : _lastNameCtrl.text.trim(),
+          'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
+        });
+        err = createErr;
+        // После успешного создания — расписание и фото
+        if (err == null && staffId != null) {
+          if (_hasAnySchedule) await _saveScheduleForNewStaff(staffId);
+          await _uploadPendingPhoto(staffId);
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() => _loading = false);
+
+    if (err != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(err)));
+    } else {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  // ──────────────────────────── UI helpers ────────────────────────────
+
+  /// Строка одного дня в расписании (переиспользуется в edit и create).
+  Widget _buildDayRow((String, String) d) {
+    final isWorking = _workDays[d.$1] ?? false;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 28,
+            child: Text(
+              d.$2,
+              style:
+                  const TextStyle(color: AppColors.muted, fontSize: 13),
+            ),
+          ),
+          Switch(
+            value: isWorking,
+            activeThumbColor: AppColors.gold,
+            onChanged: (on) => setState(() {
+              _workDays[d.$1] = on;
+              if (on && _scheduleCtrl[d.$1]!.text.trim().isEmpty) {
+                _scheduleCtrl[d.$1]!.text = _defaultTime;
+              }
+            }),
+          ),
+          if (isWorking)
+            Expanded(
+              child: TextFormField(
+                controller: _scheduleCtrl[d.$1],
+                decoration: const InputDecoration(
+                  hintText: '10:00-22:00',
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                style:
+                    const TextStyle(color: AppColors.text, fontSize: 13),
+              ),
+            )
+          else
+            const Expanded(
+              child: Text(
+                'выходной',
+                style:
+                    TextStyle(color: AppColors.muted, fontSize: 13),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ──────────────────────────── build ────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     if (_isEdit) {
-      // Keep staffProvider alive (autoDispose) and react to data loading
       final staffState = ref.watch(staffProvider);
-      ref.listen<StaffState>(staffProvider, (_, next) => _populateFromState(next));
-      // Handle initial state if already loaded before first listen fires
-      if (!_staffLoaded && !staffState.loading) {
-        _populateFromState(staffState);
+      ref.listen<StaffState>(
+          staffProvider, (_, next) => _populateFromState(next));
+      // Нельзя вызывать setState внутри build — используем postFrameCallback
+      if (!_staffLoaded && !staffState.loading && staffState.staff.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && !_staffLoaded) _populateFromState(staffState);
+        });
       }
     }
 
@@ -382,6 +542,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            // ── Аватар (только редактирование) ──
             if (_isEdit) ...[
               Center(
                 child: Stack(
@@ -389,12 +550,13 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                     CircleAvatar(
                       radius: 48,
                       backgroundColor: AppColors.surface2,
-                      backgroundImage: _photoUrl != null
+                      backgroundImage: (_photoUrl?.isNotEmpty ?? false)
                           ? NetworkImage('$_photoUrl?v=$_photoVersion')
                           : null,
-                      child: _photoUrl == null
-                          ? const Icon(Icons.person, size: 40, color: AppColors.muted)
-                          : null,
+                      child: (_photoUrl?.isNotEmpty ?? false)
+                          ? null
+                          : const Icon(Icons.person,
+                              size: 40, color: AppColors.muted),
                     ),
                     Positioned(
                       bottom: 0,
@@ -404,7 +566,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                               width: 28,
                               height: 28,
                               child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.gold),
+                                  strokeWidth: 2,
+                                  color: AppColors.gold),
                             )
                           : GestureDetector(
                               onTap: _pickAndUploadPhoto,
@@ -425,16 +588,68 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
               ),
               const SizedBox(height: 20),
             ],
+
+            // ── Аватар (только создание) ──
+            if (!_isEdit) ...[
+              Center(
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 48,
+                      backgroundColor: AppColors.surface2,
+                      backgroundImage: _pendingPhotoBytes != null
+                          ? MemoryImage(_pendingPhotoBytes!)
+                          : null,
+                      child: _pendingPhotoBytes == null
+                          ? const Icon(Icons.person,
+                              size: 40, color: AppColors.muted)
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: _pickPhotoForCreate,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: AppColors.gold,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.camera_alt,
+                              size: 16, color: Colors.black),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // ── Телефон-логин (только создание) ──
             if (!_isEdit) ...[
               TextFormField(
                 controller: _userIdCtrl,
-                decoration:
-                    const InputDecoration(labelText: 'Логин (userId) *'),
-                validator: (v) =>
-                    v == null || v.trim().isEmpty ? 'Обязательное поле' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Телефон (логин) *',
+                  hintText: '+7 000 000-00-00',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
+                keyboardType: TextInputType.phone,
+                inputFormatters: [_phoneFormatter],
+                validator: (v) {
+                  if (_phoneFormatter.getUnmaskedText().length < 10) {
+                    return 'Введите номер телефона';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 12),
             ],
+
+            // ── Пароль ──
             Row(
               children: [
                 Expanded(
@@ -475,7 +690,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.surface2,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                  border: Border.all(
+                      color: AppColors.gold.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -516,16 +732,26 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 ),
               ),
             ],
+
+            // ── Имя / Фамилия ──
             const SizedBox(height: 12),
             TextFormField(
               controller: _firstNameCtrl,
-              decoration: const InputDecoration(labelText: 'Имя'),
+              decoration: const InputDecoration(labelText: 'Имя *'),
+              textCapitalization: TextCapitalization.words,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Введите имя' : null,
             ),
             const SizedBox(height: 12),
             TextFormField(
               controller: _lastNameCtrl,
-              decoration: const InputDecoration(labelText: 'Фамилия'),
+              decoration: const InputDecoration(labelText: 'Фамилия *'),
+              textCapitalization: TextCapitalization.words,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Введите фамилию' : null,
             ),
+
+            // ── Роли ──
             const SizedBox(height: 16),
             const Text(
               'Роли *',
@@ -558,6 +784,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   style: TextStyle(color: AppColors.red, fontSize: 12),
                 ),
               ),
+
+            // ── Кальянные ──
             if (_needsLounge) ...[
               const SizedBox(height: 16),
               if (_selectedLoungeIds.isNotEmpty) ...[
@@ -629,8 +857,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                       return ListTile(
                         dense: true,
                         title: Text(l.name,
-                            style:
-                                const TextStyle(color: AppColors.text)),
+                            style: const TextStyle(
+                                color: AppColors.text)),
                         onTap: () => setState(() {
                           _selectedLoungeIds.add(l.id);
                           _loungeSearchCtrl.clear();
@@ -647,6 +875,29 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                       style: TextStyle(color: AppColors.muted)),
                 ),
             ],
+
+            // ── Расписание — СОЗДАНИЕ ──
+            // Показываем как только выбрана кальянная (роль может быть не выбрана ещё)
+            if (!_isEdit && _selectedLoungeIds.isNotEmpty) ...[
+              const Divider(color: AppColors.border, height: 32),
+              const Text(
+                'Расписание',
+                style: TextStyle(
+                  color: AppColors.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Укажите рабочие дни (будет сохранено при создании)',
+                style: TextStyle(color: AppColors.muted, fontSize: 11),
+              ),
+              const SizedBox(height: 10),
+              ..._days.map(_buildDayRow),
+            ],
+
+            // ── Расписание — РЕДАКТИРОВАНИЕ ──
             if (_isEdit) ...[
               const Divider(color: AppColors.border, height: 32),
               const Text(
@@ -663,29 +914,34 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   padding: EdgeInsets.only(bottom: 8),
                   child: Text(
                     'Укажите кальянную выше, чтобы сохранить расписание',
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    style: TextStyle(
+                        color: AppColors.muted, fontSize: 12),
                   ),
                 )
               else ...[
+                // Если несколько кальянных — дропдаун выбора
                 if (_selectedLoungeIds.length > 1) ...[
                   const Text(
                     'Кальянная',
-                    style: TextStyle(color: AppColors.muted, fontSize: 12),
+                    style:
+                        TextStyle(color: AppColors.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 4),
                   DropdownButtonFormField<String>(
                     initialValue: scheduleLounge,
                     dropdownColor: AppColors.surface2,
-                    style:
-                        const TextStyle(color: AppColors.text, fontSize: 14),
-                    decoration: const InputDecoration(isDense: true),
+                    style: const TextStyle(
+                        color: AppColors.text, fontSize: 14),
+                    decoration:
+                        const InputDecoration(isDense: true),
                     onChanged: (v) {
                       setState(() => _scheduleSelectedLoungeId = v);
                       if (v != null) _loadScheduleForLounge(v);
                     },
                     items: _selectedLoungeIds.map((id) {
-                      final lounge =
-                          lounges.where((l) => l.id == id).firstOrNull;
+                      final lounge = lounges
+                          .where((l) => l.id == id)
+                          .firstOrNull;
                       return DropdownMenuItem(
                         value: id,
                         child: Text(lounge?.name ?? id),
@@ -696,7 +952,8 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 ],
                 const Text(
                   'Укажите время работы для каждого дня',
-                  style: TextStyle(color: AppColors.muted, fontSize: 11),
+                  style: TextStyle(
+                      color: AppColors.muted, fontSize: 11),
                 ),
                 const SizedBox(height: 10),
                 if (_loadingSchedule)
@@ -704,71 +961,25 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                     padding: EdgeInsets.symmetric(vertical: 16),
                     child: Center(
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.gold),
+                          strokeWidth: 2,
+                          color: AppColors.gold),
                     ),
-                  ),
-                if (!_loadingSchedule)
-                  ..._days.map((d) {
-                  final isWorking = _workDays[d.$1] ?? false;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 28,
-                          child: Text(
-                            d.$2,
-                            style: const TextStyle(
-                                color: AppColors.muted, fontSize: 13),
-                          ),
-                        ),
-                        Switch(
-                          value: isWorking,
-                          activeThumbColor: AppColors.gold,
-                          onChanged: (on) => setState(() {
-                            _workDays[d.$1] = on;
-                            if (on &&
-                                _scheduleCtrl[d.$1]!.text.trim().isEmpty) {
-                              _scheduleCtrl[d.$1]!.text = _defaultTime;
-                            }
-                          }),
-                        ),
-                        if (isWorking)
-                          Expanded(
-                            child: TextFormField(
-                              controller: _scheduleCtrl[d.$1],
-                              decoration: const InputDecoration(
-                                hintText: '10:00-22:00',
-                                isDense: true,
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                              ),
-                              style: const TextStyle(
-                                  color: AppColors.text, fontSize: 13),
-                            ),
-                          )
-                        else
-                          const Expanded(
-                            child: Text(
-                              'выходной',
-                              style: TextStyle(
-                                  color: AppColors.muted, fontSize: 13),
-                            ),
-                          ),
-                      ],
-                    ),
-                  );
-                }),
+                  )
+                else
+                  ..._days.map(_buildDayRow),
                 const SizedBox(height: 4),
                 LoadingButton(
                   label: 'Сохранить расписание',
-                  onPressed: scheduleLounge != null && !_loadingSchedule
-                      ? _saveSchedule
-                      : null,
+                  onPressed:
+                      scheduleLounge != null && !_loadingSchedule
+                          ? _saveSchedule
+                          : null,
                   loading: _savingSchedule,
                 ),
               ],
             ],
+
+            // ── Кнопка создать / сохранить ──
             const SizedBox(height: 32),
             LoadingButton(
               label: _isEdit ? 'Сохранить' : 'Создать',

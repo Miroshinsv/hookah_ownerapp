@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/loading_button.dart';
@@ -17,6 +18,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _userIdCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
+  final _phoneFormatter = MaskTextInputFormatter(
+    mask: '+7 ### ###-##-##',
+    filter: {'#': RegExp(r'\d')},
+    type: MaskAutoCompletionType.lazy,
+  );
   bool _loading = false;
   bool _obscure = true;
   String? _error;
@@ -35,9 +41,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _error = null;
     });
 
+    // Убираем пробелы и дефисы из маски → +79855318700
+    final phone = _userIdCtrl.text.replaceAll(RegExp(r'[\s\-]'), '');
     final error = await ref
         .read(authProvider.notifier)
-        .login(_userIdCtrl.text.trim(), _passwordCtrl.text);
+        .login(phone, _passwordCtrl.text);
 
     if (!mounted) return;
     setState(() => _loading = false);
@@ -80,13 +88,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextFormField(
                     controller: _userIdCtrl,
                     decoration: const InputDecoration(
-                      labelText: 'Логин',
-                      prefixIcon: Icon(Icons.person_outline),
+                      labelText: 'Телефон',
+                      hintText: '+7 000 000-00-00',
+                      prefixIcon: Icon(Icons.phone_outlined),
                     ),
-                    keyboardType: TextInputType.text,
+                    keyboardType: TextInputType.phone,
                     textInputAction: TextInputAction.next,
-                    validator: (v) =>
-                        v == null || v.trim().isEmpty ? 'Введите логин' : null,
+                    inputFormatters: [_phoneFormatter],
+                    validator: (v) {
+                      if (_phoneFormatter.getUnmaskedText().length < 10) {
+                        return 'Введите номер телефона';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
