@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 
 import '../../../core/theme/app_theme.dart';
@@ -67,16 +66,11 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   bool _loading = false;
   bool _savingSchedule = false;
   bool _loadingSchedule = false;
-  bool _uploadingPhoto = false;
   bool _obscurePassword = true;
   String? _generatedPassword;
   bool _staffLoaded = false;
   String? _photoUrl;
-  int _photoVersion = 0;
   String? _loadedScheduleLoungeId;
-  // Для создания: локально выбранное фото (до загрузки на сервер)
-  XFile? _pendingPhotoFile;
-  Uint8List? _pendingPhotoBytes;
 
   bool get _isEdit => widget.staffId != null;
   bool get _needsLounge => _selectedRoles.any((r) => r != 'admin');
@@ -230,123 +224,6 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
 
   bool get _hasAnySchedule => _workDays.values.any((v) => v);
 
-  // ──────────────────────────── photo ────────────────────────────
-
-  /// Показывает боттом-шит выбора источника и возвращает файл.
-  Future<XFile?> _pickImageFile() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 4,
-              margin: const EdgeInsets.only(top: 10, bottom: 4),
-              decoration: BoxDecoration(
-                color: AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined,
-                  color: AppColors.gold),
-              title: const Text('Галерея',
-                  style: TextStyle(color: AppColors.text)),
-              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined,
-                  color: AppColors.gold),
-              title: const Text('Камера',
-                  style: TextStyle(color: AppColors.text)),
-              onTap: () => Navigator.pop(ctx, ImageSource.camera),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (source == null || !mounted) return null;
-    final picker = ImagePicker();
-    return picker.pickImage(source: source, imageQuality: 85);
-  }
-
-  /// Режим редактирования: сразу загружаем фото на сервер.
-  Future<void> _pickAndUploadPhoto() async {
-    final file = await _pickImageFile();
-    if (file == null || !mounted) return;
-
-    setState(() => _uploadingPhoto = true);
-    try {
-      final bytes = await file.readAsBytes();
-      final base64 = base64Encode(bytes);
-      final ext = file.name.split('.').last.toLowerCase();
-      final mimeType = switch (ext) {
-        'jpg' || 'jpeg' => 'image/jpeg',
-        'png' => 'image/png',
-        'webp' => 'image/webp',
-        _ => 'image/jpeg',
-      };
-      final err = await ref
-          .read(staffProvider.notifier)
-          .uploadStaffPhoto(widget.staffId!, base64, mimeType);
-      if (!mounted) return;
-      if (err != null) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(err)));
-      } else {
-        final updated = ref
-            .read(staffProvider)
-            .staff
-            .where((s) => s.id == widget.staffId)
-            .firstOrNull;
-        if (updated != null) {
-          setState(() {
-            _photoUrl = updated.photoUrl;
-            _photoVersion++;
-          });
-        }
-      }
-    } finally {
-      if (mounted) setState(() => _uploadingPhoto = false);
-    }
-  }
-
-  /// Режим создания: сохраняем фото локально для предпросмотра.
-  Future<void> _pickPhotoForCreate() async {
-    final file = await _pickImageFile();
-    if (file == null || !mounted) return;
-    final Uint8List bytes = await file.readAsBytes();
-    if (!mounted) return;
-    setState(() {
-      _pendingPhotoFile = file;
-      _pendingPhotoBytes = bytes;
-    });
-  }
-
-  /// Загружает локально выбранное фото после успешного создания сотрудника.
-  Future<void> _uploadPendingPhoto(String staffId) async {
-    final file = _pendingPhotoFile;
-    final bytes = _pendingPhotoBytes;
-    if (file == null || bytes == null) return;
-    final ext = file.name.split('.').last.toLowerCase();
-    final mimeType = switch (ext) {
-      'jpg' || 'jpeg' => 'image/jpeg',
-      'png' => 'image/png',
-      'webp' => 'image/webp',
-      _ => 'image/jpeg',
-    };
-    await ref
-        .read(staffProvider.notifier)
-        .uploadStaffPhoto(staffId, base64Encode(bytes), mimeType);
-  }
-
   // ──────────────────────────── misc ────────────────────────────
 
   @override
@@ -439,10 +316,9 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
           'roles': _selectedRoles.isEmpty ? ['waiter'] : _selectedRoles,
         });
         err = createErr;
-        // После успешного создания — расписание и фото
-        if (err == null && staffId != null) {
-          if (_hasAnySchedule) await _saveScheduleForNewStaff(staffId);
-          await _uploadPendingPhoto(staffId);
+        // После успешного создания — сохраняем расписание
+        if (err == null && staffId != null && _hasAnySchedule) {
+          await _saveScheduleForNewStaff(staffId);
         }
       }
     }
@@ -542,90 +418,22 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // ── Аватар (только редактирование) ──
+            // ── Аватар (только редактирование, только отображение) ──
             if (_isEdit) ...[
               Center(
-                child: Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 48,
-                      backgroundColor: AppColors.surface2,
-                      backgroundImage: (_photoUrl?.isNotEmpty ?? false)
-                          ? NetworkImage('$_photoUrl?v=$_photoVersion')
-                          : null,
-                      child: (_photoUrl?.isNotEmpty ?? false)
-                          ? null
-                          : const Icon(Icons.person,
-                              size: 40, color: AppColors.muted),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: _uploadingPhoto
-                          ? const SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: AppColors.gold),
-                            )
-                          : GestureDetector(
-                              onTap: _pickAndUploadPhoto,
-                              child: Container(
-                                width: 28,
-                                height: 28,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.gold,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(Icons.camera_alt,
-                                    size: 16, color: Colors.black),
-                              ),
-                            ),
-                    ),
-                  ],
+                child: CircleAvatar(
+                  radius: 48,
+                  backgroundColor: AppColors.surface2,
+                  backgroundImage: (_photoUrl?.isNotEmpty ?? false)
+                      ? NetworkImage(_photoUrl!)
+                      : null,
+                  child: (_photoUrl?.isNotEmpty ?? false)
+                      ? null
+                      : const Icon(Icons.person,
+                          size: 40, color: AppColors.muted),
                 ),
               ),
               const SizedBox(height: 20),
-            ],
-
-            // ── Аватар (только создание) ──
-            if (!_isEdit) ...[
-              Center(
-                child: Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 48,
-                      backgroundColor: AppColors.surface2,
-                      backgroundImage: _pendingPhotoBytes != null
-                          ? MemoryImage(_pendingPhotoBytes!)
-                          : null,
-                      child: _pendingPhotoBytes == null
-                          ? const Icon(Icons.person,
-                              size: 40, color: AppColors.muted)
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: GestureDetector(
-                        onTap: _pickPhotoForCreate,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: const BoxDecoration(
-                            color: AppColors.gold,
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.camera_alt,
-                              size: 16, color: Colors.black),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
             ],
 
             // ── Телефон-логин (только создание) ──

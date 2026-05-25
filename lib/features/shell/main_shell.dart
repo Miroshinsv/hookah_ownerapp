@@ -119,6 +119,7 @@ class _MainShellState extends ConsumerState<MainShell>
           _UserHeader(
             userId: auth.userId ?? '',
             role: auth.role ?? '',
+            onProfile: () => context.push('/profile'),
             onLogout: () async {
               await ref.read(authProvider.notifier).logout();
               if (context.mounted) context.go('/login');
@@ -161,11 +162,13 @@ class _UserHeader extends StatelessWidget {
   final String userId;
   final String role;
   final VoidCallback onLogout;
+  final VoidCallback onProfile;
 
   const _UserHeader({
     required this.userId,
     required this.role,
     required this.onLogout,
+    required this.onProfile,
   });
 
   @override
@@ -214,6 +217,12 @@ class _UserHeader extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.account_circle_outlined, size: 22),
+            color: AppColors.muted,
+            tooltip: 'Мой профиль',
+            onPressed: onProfile,
           ),
           IconButton(
             icon: const Icon(Icons.logout, size: 20),

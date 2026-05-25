@@ -12,6 +12,7 @@ import '../../features/lounges/screens/lounge_form_screen.dart';
 import '../../features/lounges/screens/lounges_screen.dart';
 import '../../features/orders/screens/orders_screen.dart';
 import '../../features/shell/main_shell.dart';
+import '../../features/profile/screens/profile_screen.dart';
 import '../../features/staff/screens/staff_form_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -82,6 +83,10 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/staff-form/:id',
         builder: (_, state) =>
             StaffFormScreen(staffId: state.pathParameters['id']),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (ctx, _) => const ProfileScreen(),
       ),
     ],
     errorBuilder: (_, state) => Scaffold(
