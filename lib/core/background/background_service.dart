@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
@@ -126,10 +127,10 @@ void _onStart(ServiceInstance service) async {
   }
 
   // Check immediately, then every 30 seconds.
-  await _checkNewOrders(plugin);
+  await _checkNewOrders(plugin, service);
   await _checkNewMessages(plugin);
   Timer.periodic(const Duration(seconds: 30), (_) async {
-    await _checkNewOrders(plugin);
+    await _checkNewOrders(plugin, service);
     await _checkNewMessages(plugin);
   });
 }
@@ -141,9 +142,15 @@ Future<bool> _onIosBackground(ServiceInstance service) async {
   return true;
 }
 
-Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
+Future<void> _checkNewOrders(
+    FlutterLocalNotificationsPlugin plugin, ServiceInstance service) async {
   try {
     final prefs = await SharedPreferences.getInstance();
+    // Force re-read from platform storage: the main isolate may have written
+    // a new token (login/re-login) after this background isolate started.
+    // Each isolate caches SharedPreferences independently, so without reload()
+    // the token would never be visible here after the first boot.
+    await prefs.reload();
     final token = prefs.getString(_tokenKey);
     if (token == null || token.isEmpty) return;
 
@@ -226,6 +233,22 @@ Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
     } else {
       _stopAlarm();
     }
+
+    // Update foreground notification with last-check timestamp so the user
+    // (and developer) can verify the service is actively polling.
+    final now = DateTime.now();
+    final ts = '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}:'
+        '${now.second.toString().padLeft(2, '0')}';
+    final content = newOrders.isEmpty
+        ? 'Проверено в $ts · новых заказов нет'
+        : 'Проверено в $ts · новых: ${newOrders.length}';
+    if (service is AndroidServiceInstance) {
+      service.setForegroundNotificationInfo(
+        title: 'Hookah Admin',
+        content: content,
+      );
+    }
   } catch (e) {
     debugPrint('BackgroundService._checkNewOrders: $e');
   }
@@ -234,6 +257,7 @@ Future<void> _checkNewOrders(FlutterLocalNotificationsPlugin plugin) async {
 Future<void> _checkNewMessages(FlutterLocalNotificationsPlugin plugin) async {
   try {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.reload(); // keep in sync with main isolate
     final token = prefs.getString(_tokenKey);
     if (token == null || token.isEmpty) return;
 
@@ -366,6 +390,31 @@ Future<void> _checkOrderMessages(
 }
 
 class BackgroundOrderService {
+  static const _channel = MethodChannel('ru.hookahorder/battery');
+
+  /// Returns true if the app is already whitelisted from battery optimisation.
+  static Future<bool> isBatteryOptimizationIgnored() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      final result =
+          await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations');
+      return result ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Opens the system dialog that asks the user to disable battery
+  /// optimisation for this app.  Should be called after login.
+  static Future<void> requestIgnoreBatteryOptimizations() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
+    } catch (e) {
+      debugPrint('BackgroundOrderService.requestBatteryOpt: $e');
+    }
+  }
+
   static Future<void> initialize() async {
     if (!defaultTargetPlatform.toString().contains('android') &&
         !defaultTargetPlatform.toString().contains('iOS')) {

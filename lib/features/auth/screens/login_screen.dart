@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 
+import '../../../core/background/background_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/widgets/loading_button.dart';
 import '../providers/auth_provider.dart';
@@ -53,7 +54,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (error != null) {
       setState(() => _error = error);
     } else {
-      context.go('/dashboard');
+      // Ask the user to disable battery optimisation so the background
+      // service can poll for new orders after the app is closed.
+      final ignored =
+          await BackgroundOrderService.isBatteryOptimizationIgnored();
+      if (!ignored && mounted) {
+        await BackgroundOrderService.requestIgnoreBatteryOptimizations();
+      }
+      if (mounted) context.go('/dashboard');
     }
   }
 
