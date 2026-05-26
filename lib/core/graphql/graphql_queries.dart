@@ -388,9 +388,26 @@ subscription NewLoungeChatMessage($loungeId: String!) {
 }
 ''';
 
+/// Все оценки без фильтрации — используется на дашборде.
+/// Переменные соответствуют тому, что реально передаётся в variables dict,
+/// иначе gql-сериализатор вырезает «лишние» объявления из сигнатуры операции.
 const kAllRatingsQuery = r'''
-query AllRatings($limit: Int, $offset: Int, $targetType: String, $targetId: String) {
-  allRatings(limit: $limit, offset: $offset, targetType: $targetType, targetId: $targetId) {
+query AllRatings($limit: Int) {
+  allRatings(limit: $limit) {
+    ratingId
+    userId
+    targetType
+    targetId
+    score
+    createdAt
+  }
+}
+''';
+
+/// Оценки с фильтром по объекту — используется на экране кальянной / сотрудника.
+const kFilteredRatingsQuery = r'''
+query FilteredRatings($limit: Int, $targetType: String, $targetId: String) {
+  allRatings(limit: $limit, targetType: $targetType, targetId: $targetId) {
     ratingId
     userId
     targetType

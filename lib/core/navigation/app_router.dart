@@ -26,7 +26,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onLogin = state.matchedLocation == '/login';
 
       if (!authenticated && !onLogin) return '/login';
-      if (authenticated && onLogin) return '/dashboard';
+      if (authenticated && onLogin) {
+        // Персонал видит только заказы, остальные — дашборд
+        return auth.isStaff ? '/orders' : '/dashboard';
+      }
+      // Персонал не имеет доступа к дашборду
+      if (auth.isStaff && state.matchedLocation == '/dashboard') return '/orders';
       return null;
     },
     routes: [

@@ -95,7 +95,7 @@ class _MainShellState extends ConsumerState<MainShell>
 
     // Keep providers alive for the entire shell lifetime so polling and
     // WS subscriptions never stop between tab switches.
-    ref.watch(dashboardProvider);
+    if (!auth.isStaff) ref.watch(dashboardProvider);
     ref.watch(ordersProvider);
     if (auth.canManageLounges) ref.watch(loungesProvider);
     final unreadCount = ref.watch(unreadMessagesProvider).length;
@@ -104,7 +104,9 @@ class _MainShellState extends ConsumerState<MainShell>
         : 0;
 
     final tabs = [
-      _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),
+      // Дашборд — только для владельца и администратора
+      if (!auth.isStaff)
+        _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),
       _Tab('/orders', Icons.receipt_long_outlined, Icons.receipt_long, 'Заказы'),
       if (auth.canManageLounges)
         _Tab('/lounges', Icons.storefront_outlined, Icons.storefront, 'Кальянные'),

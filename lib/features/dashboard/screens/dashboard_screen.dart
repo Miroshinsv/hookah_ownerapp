@@ -3,29 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/graphql/ws_client.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/order_model.dart';
-import '../../../shared/models/rating_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../lounges/providers/lounges_provider.dart';
 import '../../ratings/providers/ratings_provider.dart';
-import '../../staff/providers/staff_provider.dart';
 import '../providers/dashboard_provider.dart';
 
-// ── Вспомогательная модель для строки рейтинга ───────────────────────────────
-
-class _RatingRow {
-  final String phone;
-  final String targetName;
-  final int score;
-
-  const _RatingRow({
-    required this.phone,
-    required this.targetName,
-    required this.score,
-  });
-}
-
-// ── Экран ─────────────────────────────────────────────────────────────────────
+// ── Дашборд ───────────────────────────────────────────────────────────────────
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -50,43 +35,60 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     super.dispose();
   }
 
-  List<_RatingRow> _resolveRatings(
-    List<RatingModel> ratings,
-    RatingsState ratingsState,
-    StaffState staffState,
-    LoungesState loungesState,
-  ) {
-    return ratings.map((r) {
-      String name;
-      if (r.targetType == 'staff') {
-        final s = staffState.staff
-            .where((s) => s.id == r.targetId)
-            .firstOrNull;
-        name = s?.fullName ?? r.targetId;
-      } else {
-        final l = loungesState.lounges
-            .where((l) => l.id == r.targetId)
-            .firstOrNull;
-        name = l?.name ?? r.targetId;
-      }
-      return _RatingRow(phone: r.userId, targetName: name, score: r.score);
-    }).toList();
+  // ── Вспомогательные методы ──────────────────────────────────────────────────
+
+  static Map<OrderStatus, int> _counts(
+      List<OrderModel> orders, {
+      String? loungeId,
+      required DateTime from,
+  }) {
+    final m = {for (final s in OrderStatus.values) s: 0};
+    for (final o in orders) {
+      if (!o.createdAt.isAfter(from)) continue;
+      if (loungeId != null && o.loungeId != loungeId) continue;
+      m[o.status] = (m[o.status] ?? 0) + 1;
+    }
+    return m;
+  }
+
+  static DateTime _periodStart(int tabIndex) {
+    final now = DateTime.now();
+    switch (tabIndex) {
+      case 0:
+        return DateTime(now.year, now.month, now.day);
+      case 1:
+        final s = now.subtract(Duration(days: now.weekday - 1));
+        return DateTime(s.year, s.month, s.day);
+      case 2:
+      default:
+        return DateTime(now.year, now.month, 1);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(dashboardProvider);
-    final wsClient = ref.watch(wsClientProvider);
-    final ratingsState = ref.watch(ratingsProvider);
-    final staffState = ref.watch(staffProvider);
+    final auth = ref.watch(authProvider);
+    final dashState = ref.watch(dashboardProvider);
     final loungesState = ref.watch(loungesProvider);
+    final wsClient = ref.watch(wsClientProvider);
 
-    final todayRows = _resolveRatings(
-        ratingsState.todayRatings, ratingsState, staffState, loungesState);
-    final weekRows = _resolveRatings(
-        ratingsState.weekRatings, ratingsState, staffState, loungesState);
-    final monthRows = _resolveRatings(
-        ratingsState.monthRatings, ratingsState, staffState, loungesState);
+    // Кальянные этого владельца (для admin — все)
+    final myLounges = loungesState.lounges
+        .where((l) => auth.isAdmin || l.ownerUserId == auth.userId)
+        .toList();
+
+    // Запрашиваем рейтинги для каждой кальянной
+    final ratingsByLounge = {
+      for (final l in myLounges)
+        l.id: ref.watch(loungeRatingsProvider(l.id)),
+    };
+
+    void doRefresh() {
+      ref.read(dashboardProvider.notifier).fetch();
+      for (final l in myLounges) {
+        ref.read(loungeRatingsProvider(l.id).notifier).fetch();
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -105,10 +107,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ref.read(dashboardProvider.notifier).fetch();
-              ref.read(ratingsProvider.notifier).fetch();
-            },
+            onPressed: doRefresh,
           ),
         ],
         bottom: TabBar(
@@ -123,37 +122,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ],
         ),
       ),
-      body: state.loading && state.orders.isEmpty
+      body: dashState.loading && dashState.orders.isEmpty
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.gold))
           : RefreshIndicator(
               color: AppColors.gold,
-              onRefresh: () async {
-                await ref.read(dashboardProvider.notifier).fetch();
-                ref.read(ratingsProvider.notifier).fetch();
-              },
+              onRefresh: () async => doRefresh(),
               child: TabBarView(
                 controller: _tabs,
-                children: [
-                  _CountersPage(
-                    counts: state.todayCounts,
-                    avgRating: ratingsState.todayAvg,
-                    ratingRows: todayRows,
-                    ratingsLoading: ratingsState.loading,
-                  ),
-                  _CountersPage(
-                    counts: state.weekCounts,
-                    avgRating: ratingsState.weekAvg,
-                    ratingRows: weekRows,
-                    ratingsLoading: ratingsState.loading,
-                  ),
-                  _CountersPage(
-                    counts: state.monthCounts,
-                    avgRating: ratingsState.monthAvg,
-                    ratingRows: monthRows,
-                    ratingsLoading: ratingsState.loading,
-                  ),
-                ],
+                children: List.generate(3, (i) {
+                  final from = _periodStart(i);
+                  return _PeriodPage(
+                    allOrders: dashState.orders,
+                    lounges: myLounges,
+                    ratingsByLounge: ratingsByLounge,
+                    from: from,
+                    loungesLoading: loungesState.loading,
+                  );
+                }),
               ),
             ),
     );
@@ -189,30 +175,36 @@ class _WsIndicator extends StatelessWidget {
   }
 }
 
-// ── Страница вкладки ──────────────────────────────────────────────────────────
+// ── Страница одного периода ───────────────────────────────────────────────────
 
-class _CountersPage extends StatelessWidget {
-  final Map<OrderStatus, int> counts;
-  final double? avgRating;
-  final List<_RatingRow> ratingRows;
-  final bool ratingsLoading;
+class _PeriodPage extends StatelessWidget {
+  final List<OrderModel> allOrders;
+  final List<LoungeModel> lounges;
+  final Map<String, LoungeRatingsState> ratingsByLounge;
+  final DateTime from;
+  final bool loungesLoading;
 
-  const _CountersPage({
-    required this.counts,
-    required this.avgRating,
-    required this.ratingRows,
-    required this.ratingsLoading,
+  const _PeriodPage({
+    required this.allOrders,
+    required this.lounges,
+    required this.ratingsByLounge,
+    required this.from,
+    required this.loungesLoading,
   });
 
   @override
   Widget build(BuildContext context) {
-    final items = [
-      (OrderStatus.newOrder, AppColors.blue),
-      (OrderStatus.inProgress, AppColors.yellow),
-      (OrderStatus.completed, AppColors.green),
-      (OrderStatus.canceledByStaff, AppColors.red),
-      (OrderStatus.canceledByUser, AppColors.muted),
-    ];
+    // Суммарные показатели по всем кальянным
+    final loaded = ratingsByLounge.values.where((s) => !s.loading).toList();
+    final overallRatingsLoading =
+        ratingsByLounge.values.any((s) => s.loading);
+
+    // Взвешенное среднее: (sum of avg*count) / total_count
+    final totalCount = loaded.fold(0, (acc, s) => acc + s.count);
+    final weightedSum = loaded.fold(
+        0.0, (acc, s) => acc + (s.avgRating ?? 0.0) * s.count);
+    final overallAvg =
+        totalCount > 0 ? weightedSum / totalCount : null;
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -220,36 +212,101 @@ class _CountersPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Счётчики заказов ──────────────────────────────────────────────
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.45,
-            children: items
-                .take(4)
-                .map((item) => _CounterCard(
-                      status: item.$1,
-                      color: item.$2,
-                      count: counts[item.$1] ?? 0,
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 12),
-          _CounterCard(
-            status: items[4].$1,
-            color: items[4].$2,
-            count: counts[items[4].$1] ?? 0,
-            fullWidth: true,
+          // ── Общая карточка ─────────────────────────────────────────────────
+          _SummaryCard(
+            counts: _DashboardScreenState._counts(allOrders, from: from),
+            avgRating: overallAvg,
+            ratingCount: totalCount,
+            ratingsLoading: overallRatingsLoading,
+            loungeCount: lounges.length,
           ),
 
-          // ── Рейтинг ───────────────────────────────────────────────────────
-          const SizedBox(height: 24),
-          _RatingsSection(
-            avgRating: avgRating,
-            rows: ratingRows,
+          const SizedBox(height: 16),
+
+          // ── Карточки по кальянным ─────────────────────────────────────────
+          if (loungesLoading && lounges.isEmpty)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: CircularProgressIndicator(color: AppColors.gold),
+              ),
+            )
+          else
+            ...lounges.map((lounge) {
+              final rs = ratingsByLounge[lounge.id] ??
+                  const LoungeRatingsState();
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _LoungeCard(
+                  lounge: lounge,
+                  counts: _DashboardScreenState._counts(
+                    allOrders,
+                    loungeId: lounge.id,
+                    from: from,
+                  ),
+                  avgRating: rs.avgRating,
+                  ratingCount: rs.count,
+                  ratingsLoading: rs.loading,
+                  ratingsError: rs.error,
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Общая сводная карточка ────────────────────────────────────────────────────
+
+class _SummaryCard extends StatelessWidget {
+  final Map<OrderStatus, int> counts;
+  final double? avgRating;
+  final int ratingCount;
+  final bool ratingsLoading;
+  final int loungeCount;
+
+  const _SummaryCard({
+    required this.counts,
+    required this.avgRating,
+    required this.ratingCount,
+    required this.ratingsLoading,
+    required this.loungeCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.4)),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bar_chart_rounded,
+                  size: 16, color: AppColors.gold),
+              const SizedBox(width: 6),
+              Text(
+                'Все кальянные ($loungeCount)',
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _OrderCountsRow(counts: counts),
+          const SizedBox(height: 10),
+          _RatingBadge(
+            avg: avgRating,
+            count: ratingCount,
             loading: ratingsLoading,
           ),
         ],
@@ -258,168 +315,196 @@ class _CountersPage extends StatelessWidget {
   }
 }
 
-// ── Карточка счётчика заказов ─────────────────────────────────────────────────
+// ── Карточка одной кальянной ──────────────────────────────────────────────────
 
-class _CounterCard extends StatelessWidget {
-  final OrderStatus status;
-  final Color color;
-  final int count;
-  final bool fullWidth;
+class _LoungeCard extends StatelessWidget {
+  final LoungeModel lounge;
+  final Map<OrderStatus, int> counts;
+  final double? avgRating;
+  final int ratingCount;
+  final bool ratingsLoading;
+  final String? ratingsError;
 
-  const _CounterCard({
-    required this.status,
-    required this.color,
-    required this.count,
-    this.fullWidth = false,
+  const _LoungeCard({
+    required this.lounge,
+    required this.counts,
+    required this.avgRating,
+    required this.ratingCount,
+    required this.ratingsLoading,
+    this.ratingsError,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: fullWidth ? double.infinity : null,
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.border),
       ),
-      padding: const EdgeInsets.all(16),
-      child: Row(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 4,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '$count',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
+          Row(
+            children: [
+              const Icon(Icons.storefront_outlined,
+                  size: 16, color: AppColors.muted),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  lounge.name,
+                  style: const TextStyle(
+                    color: AppColors.text,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  status.label,
-                  style: const TextStyle(color: AppColors.muted, fontSize: 12),
-                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
+          const SizedBox(height: 12),
+          _OrderCountsRow(counts: counts),
+          const SizedBox(height: 10),
+          if (ratingsError != null)
+            Row(
+              children: [
+                const Icon(Icons.error_outline,
+                    size: 13, color: AppColors.red),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    ratingsError!,
+                    style: const TextStyle(
+                        color: AppColors.red, fontSize: 11),
+                  ),
+                ),
+              ],
+            )
+          else
+            _RatingBadge(
+              avg: avgRating,
+              count: ratingCount,
+              loading: ratingsLoading,
+            ),
         ],
       ),
     );
   }
 }
 
-// ── Секция рейтингов ──────────────────────────────────────────────────────────
+// ── Строка счётчиков заказов ──────────────────────────────────────────────────
 
-class _RatingsSection extends StatelessWidget {
-  final double? avgRating;
-  final List<_RatingRow> rows;
+class _OrderCountsRow extends StatelessWidget {
+  final Map<OrderStatus, int> counts;
+
+  const _OrderCountsRow({required this.counts});
+
+  static const _items = [
+    (OrderStatus.newOrder, AppColors.blue, 'Новые'),
+    (OrderStatus.inProgress, AppColors.yellow, 'В работе'),
+    (OrderStatus.completed, AppColors.green, 'Готово'),
+    (OrderStatus.canceledByStaff, AppColors.red, 'Отменено'),
+    (OrderStatus.canceledByUser, AppColors.muted, 'Клиент'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: _items.map((item) {
+        final (status, color, label) = item;
+        final count = counts[status] ?? 0;
+        return Expanded(
+          child: Column(
+            children: [
+              Text(
+                '$count',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(
+                    color: AppColors.muted, fontSize: 10),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+}
+
+// ── Бейдж рейтинга ────────────────────────────────────────────────────────────
+
+class _RatingBadge extends StatelessWidget {
+  final double? avg;
+  final int count;
   final bool loading;
 
-  const _RatingsSection({
-    required this.avgRating,
-    required this.rows,
+  const _RatingBadge({
+    required this.avg,
+    required this.count,
     required this.loading,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Заголовок секции
-        Row(
-          children: [
-            const Icon(Icons.star_outline, size: 16, color: AppColors.gold),
-            const SizedBox(width: 6),
-            const Text(
-              'Рейтинг',
-              style: TextStyle(
-                color: AppColors.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const Spacer(),
-            if (loading)
-              const SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.gold),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-
-        // Средняя оценка
-        if (avgRating != null || rows.isNotEmpty) ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(10),
-              border:
-                  Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.star_rounded, size: 20, color: AppColors.gold),
-                const SizedBox(width: 6),
-                Text(
-                  avgRating != null
-                      ? avgRating!.toStringAsFixed(1)
-                      : '—',
-                  style: const TextStyle(
-                    color: AppColors.gold,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${rows.length} ${_pluralRating(rows.length)}',
-                  style: const TextStyle(
-                      color: AppColors.muted, fontSize: 13),
-                ),
-              ],
-            ),
+    if (loading) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.gold),
           ),
-          const SizedBox(height: 10),
+          SizedBox(width: 6),
+          Text('Рейтинг...',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
         ],
+      );
+    }
 
-        // Список оценок
-        if (rows.isEmpty && !loading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            child: Text(
-              'Оценок за этот период нет',
-              style: TextStyle(color: AppColors.muted, fontSize: 13),
-            ),
-          )
-        else
-          ...rows.map((r) => _RatingRowTile(row: r)),
+    if (avg == null && count == 0) {
+      return const Text(
+        'Оценок нет',
+        style: TextStyle(color: AppColors.muted, fontSize: 12),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.star_rounded, size: 16, color: AppColors.gold),
+        const SizedBox(width: 4),
+        Text(
+          avg != null ? avg!.toStringAsFixed(1) : '—',
+          style: const TextStyle(
+            color: AppColors.gold,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          '· $count ${_plural(count)}',
+          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
       ],
     );
   }
 
-  static String _pluralRating(int n) {
+  static String _plural(int n) {
     if (n % 100 >= 11 && n % 100 <= 19) return 'оценок';
     switch (n % 10) {
       case 1:
@@ -431,73 +516,5 @@ class _RatingsSection extends StatelessWidget {
       default:
         return 'оценок';
     }
-  }
-}
-
-// ── Строка оценки в списке ────────────────────────────────────────────────────
-
-class _RatingRowTile extends StatelessWidget {
-  final _RatingRow row;
-
-  const _RatingRowTile({required this.row});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          // Телефон
-          Expanded(
-            flex: 4,
-            child: Text(
-              row.phone,
-              style: const TextStyle(
-                color: AppColors.text,
-                fontSize: 12,
-                fontFamily: 'monospace',
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Фамилия Имя (цель)
-          Expanded(
-            flex: 5,
-            child: Text(
-              row.targetName,
-              style: const TextStyle(
-                color: AppColors.muted,
-                fontSize: 12,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Оценка
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.star_rounded, size: 14, color: AppColors.gold),
-              const SizedBox(width: 2),
-              Text(
-                '${row.score}',
-                style: const TextStyle(
-                  color: AppColors.gold,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
   }
 }

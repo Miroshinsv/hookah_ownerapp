@@ -84,7 +84,7 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
       final client = ref.read(graphqlClientProvider);
       final result = await client.query(
         QueryOptions(
-          document: gql(kAllRatingsQuery),
+          document: gql(kFilteredRatingsQuery),
           variables: {
             'targetType': 'staff',
             'targetId': widget.staffId,

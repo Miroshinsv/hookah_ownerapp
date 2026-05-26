@@ -211,7 +211,7 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
       final client = ref.read(graphqlClientProvider);
       final result = await client.query(
         QueryOptions(
-          document: gql(kAllRatingsQuery),
+          document: gql(kFilteredRatingsQuery),
           variables: {
             'targetType': 'lounge',
             'targetId': widget.lounge.id,
