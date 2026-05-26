@@ -3,10 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:graphql_flutter/graphql_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:yandex_mapkit/yandex_mapkit.dart';
 
+import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/models/rating_model.dart';
 import '../../../shared/utils/map_marker_utils.dart';
 import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/lounge_photo_model.dart';
@@ -189,12 +192,44 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
   String? _deletingPhotoId;
   BitmapDescriptor? _markerIcon;
 
+  List<RatingModel> _ratings = [];
+  bool _loadingRatings = false;
+
   @override
   void initState() {
     super.initState();
     buildHookahMarkerBitmap().then((icon) {
       if (mounted) setState(() => _markerIcon = icon);
     });
+    _loadRatings();
+  }
+
+  Future<void> _loadRatings() async {
+    if (!mounted) return;
+    setState(() => _loadingRatings = true);
+    try {
+      final client = ref.read(graphqlClientProvider);
+      final result = await client.query(
+        QueryOptions(
+          document: gql(kAllRatingsQuery),
+          variables: {
+            'targetType': 'lounge',
+            'targetId': widget.lounge.id,
+            'limit': 200,
+          },
+          fetchPolicy: FetchPolicy.networkOnly,
+        ),
+      );
+      if (!mounted) return;
+      if (result.hasException) throw result.exception!;
+      final list = (result.data?['allRatings'] as List<dynamic>? ?? [])
+          .map((e) => RatingModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) setState(() { _ratings = list; _loadingRatings = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingRatings = false);
+    }
   }
 
   Future<void> _delete() async {
@@ -551,12 +586,13 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
                 icon: Icons.location_on_outlined, text: lounge.shortAddress!),
             const SizedBox(height: 8),
           ],
-          if (lounge.rating != null) ...[
-            _InfoRow(
-                icon: Icons.star_outline,
-                text: 'Рейтинг: ${lounge.rating!.toStringAsFixed(1)}'),
-            const SizedBox(height: 16),
-          ],
+          // Рейтинг
+          _LoungeRatingsSection(
+            cachedRating: lounge.rating,
+            ratings: _ratings,
+            loading: _loadingRatings,
+          ),
+          const SizedBox(height: 16),
           if (hasCoords) ...[
             const Text(
               'Карта',
@@ -1031,6 +1067,178 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Секция рейтинга кальянной ─────────────────────────────────────────────────
+
+class _LoungeRatingsSection extends StatelessWidget {
+  final double? cachedRating;
+  final List<RatingModel> ratings;
+  final bool loading;
+
+  const _LoungeRatingsSection({
+    required this.cachedRating,
+    required this.ratings,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final avg = ratings.isEmpty
+        ? cachedRating
+        : ratings.fold(0.0, (s, r) => s + r.score) / ratings.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Заголовок
+        Row(
+          children: [
+            const Text(
+              'Рейтинг',
+              style: TextStyle(
+                color: AppColors.text,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const Spacer(),
+            if (loading)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.gold),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // Средняя оценка + счётчик
+        if (avg != null)
+          Row(
+            children: [
+              ...List.generate(
+                5,
+                (i) => Icon(
+                  i < avg.round()
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  size: 18,
+                  color: AppColors.gold,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                avg.toStringAsFixed(1),
+                style: const TextStyle(
+                  color: AppColors.gold,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              if (ratings.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '· ${ratings.length} ${_plural(ratings.length)}',
+                  style: const TextStyle(
+                      color: AppColors.muted, fontSize: 13),
+                ),
+              ],
+            ],
+          )
+        else if (!loading)
+          const Text(
+            'Нет оценок',
+            style: TextStyle(color: AppColors.muted, fontSize: 13),
+          ),
+
+        // Список последних оценок
+        if (ratings.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ...ratings.take(20).map((r) => _LoungeRatingTile(rating: r)),
+          if (ratings.length > 20)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '+ ещё ${ratings.length - 20}',
+                style:
+                    const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  static String _plural(int n) {
+    if (n % 100 >= 11 && n % 100 <= 19) return 'оценок';
+    switch (n % 10) {
+      case 1:
+        return 'оценка';
+      case 2:
+      case 3:
+      case 4:
+        return 'оценки';
+      default:
+        return 'оценок';
+    }
+  }
+}
+
+class _LoungeRatingTile extends StatelessWidget {
+  final RatingModel rating;
+
+  const _LoungeRatingTile({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = rating.createdAt;
+    final dateStr =
+        '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          // Звёзды
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              5,
+              (i) => Icon(
+                i < rating.score
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
+                size: 14,
+                color: AppColors.gold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Телефон
+          Expanded(
+            child: Text(
+              rating.userId,
+              style: const TextStyle(color: AppColors.text, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // Дата
+          Text(
+            dateStr,
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }

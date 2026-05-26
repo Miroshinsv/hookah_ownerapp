@@ -4,6 +4,7 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 
 import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../shared/models/rating_model.dart';
 import '../../../shared/models/staff_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import 'staff_form_screen.dart';
@@ -32,6 +33,9 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
   StaffProfileModel? _profile;
   bool _loading = true;
   String? _error;
+
+  List<RatingModel> _ratings = [];
+  bool _loadingRatings = false;
 
   @override
   void initState() {
@@ -68,6 +72,36 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
         _loading = false;
         _error = e.toString();
       });
+    }
+    // Загружаем оценки параллельно
+    _loadRatings();
+  }
+
+  Future<void> _loadRatings() async {
+    if (!mounted) return;
+    setState(() => _loadingRatings = true);
+    try {
+      final client = ref.read(graphqlClientProvider);
+      final result = await client.query(
+        QueryOptions(
+          document: gql(kAllRatingsQuery),
+          variables: {
+            'targetType': 'staff',
+            'targetId': widget.staffId,
+            'limit': 200,
+          },
+          fetchPolicy: FetchPolicy.networkOnly,
+        ),
+      );
+      if (!mounted) return;
+      if (result.hasException) throw result.exception!;
+      final list = (result.data?['allRatings'] as List<dynamic>? ?? [])
+          .map((e) => RatingModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) setState(() { _ratings = list; _loadingRatings = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loadingRatings = false);
     }
   }
 
@@ -111,7 +145,11 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
             )
           : _error != null
               ? _ErrorView(error: _error!, onRetry: _load)
-              : _ProfileBody(profile: _profile!),
+              : _ProfileBody(
+                  profile: _profile!,
+                  ratings: _ratings,
+                  loadingRatings: _loadingRatings,
+                ),
     );
   }
 }
@@ -120,8 +158,14 @@ class _StaffDetailScreenState extends ConsumerState<StaffDetailScreen> {
 
 class _ProfileBody extends StatelessWidget {
   final StaffProfileModel profile;
+  final List<RatingModel> ratings;
+  final bool loadingRatings;
 
-  const _ProfileBody({required this.profile});
+  const _ProfileBody({
+    required this.profile,
+    required this.ratings,
+    required this.loadingRatings,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -148,7 +192,11 @@ class _ProfileBody extends StatelessWidget {
           _SectionLabel('Кальянные (${profile.lounges.length})'),
           const SizedBox(height: 8),
           ...profile.lounges.map((l) => _LoungeCard(lounge: l)),
+          const SizedBox(height: 24),
         ],
+
+        // Оценки
+        _buildRatingsSection(),
       ],
     );
   }
@@ -188,26 +236,150 @@ class _ProfileBody extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
 
-        // Рейтинг
+        // Рейтинг (средний)
         if (profile.rating != null) ...[
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(Icons.star, size: 16, color: AppColors.gold),
+              const Icon(Icons.star_rounded, size: 18, color: AppColors.gold),
               const SizedBox(width: 4),
               Text(
                 profile.rating!.toStringAsFixed(1),
                 style: const TextStyle(
                   color: AppColors.gold,
-                  fontSize: 15,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (ratings.isNotEmpty) ...[
+                const SizedBox(width: 6),
+                Text(
+                  '(${ratings.length} ${_pluralRating(ratings.length)})',
+                  style: const TextStyle(
+                      color: AppColors.muted, fontSize: 13),
+                ),
+              ],
             ],
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildRatingsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _SectionLabel('Оценки'),
+            const SizedBox(width: 8),
+            if (ratings.isNotEmpty)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.gold.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${ratings.length}',
+                  style: const TextStyle(
+                    color: AppColors.gold,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            const Spacer(),
+            if (loadingRatings)
+              const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.gold),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (ratings.isEmpty && !loadingRatings)
+          const Text(
+            'Оценок пока нет',
+            style: TextStyle(color: AppColors.muted, fontSize: 13),
+          )
+        else
+          ...ratings.map((r) => _RatingTile(rating: r)),
+      ],
+    );
+  }
+
+  static String _pluralRating(int n) {
+    if (n % 100 >= 11 && n % 100 <= 19) return 'оценок';
+    switch (n % 10) {
+      case 1:
+        return 'оценка';
+      case 2:
+      case 3:
+      case 4:
+        return 'оценки';
+      default:
+        return 'оценок';
+    }
+  }
+}
+
+// ── Плитка оценки ─────────────────────────────────────────────────────────────
+
+class _RatingTile extends StatelessWidget {
+  final RatingModel rating;
+
+  const _RatingTile({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    final dt = rating.createdAt;
+    final dateStr =
+        '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          // Звёзды
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              5,
+              (i) => Icon(
+                i < rating.score ? Icons.star_rounded : Icons.star_outline_rounded,
+                size: 15,
+                color: AppColors.gold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Телефон
+          Expanded(
+            child: Text(
+              rating.userId,
+              style: const TextStyle(color: AppColors.text, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          // Дата
+          Text(
+            dateStr,
+            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 }

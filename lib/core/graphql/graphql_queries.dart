@@ -387,3 +387,25 @@ subscription NewLoungeChatMessage($loungeId: String!) {
   }
 }
 ''';
+
+const kAllRatingsQuery = r'''
+query AllRatings($limit: Int, $offset: Int, $targetType: String, $targetId: String) {
+  allRatings(limit: $limit, offset: $offset, targetType: $targetType, targetId: $targetId) {
+    ratingId
+    userId
+    targetType
+    targetId
+    score
+    createdAt
+  }
+}
+''';
+
+const kRatingStatsQuery = r'''
+query RatingStats($targetType: String!, $targetId: String!) {
+  ratingStats(targetType: $targetType, targetId: $targetId) {
+    avgRating
+    count
+  }
+}
+''';
