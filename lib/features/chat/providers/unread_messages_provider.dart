@@ -15,26 +15,51 @@ import '../../dashboard/providers/dashboard_provider.dart';
 
 /// Tracks which orderId is currently open in ChatScreen.
 /// Used to suppress push notifications when the user is already viewing that chat.
-final activeChatOrderIdProvider = StateProvider<String?>((ref) => null);
+class _ActiveChatNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void set(String? value) => state = value;
+}
+
+final activeChatOrderIdProvider =
+    NotifierProvider<_ActiveChatNotifier, String?>(_ActiveChatNotifier.new);
 
 const _staffRoles = {
   'admin', 'owner', 'hookah_master', 'hostess', 'waiter', 'staff'
 };
 
-class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
-  final StorageService _storage;
-  final WsClient _ws;
-  final String? _myUserId;
-  final Ref _ref;
+class UnreadMessagesNotifier extends Notifier<Set<String>> {
+  late StorageService _storage;
+  late WsClient _ws;
+  String? _myUserId;
   StreamSubscription? _sub;
   Timer? _pollTimer;
   bool _disposed = false;
   List<String> _activeOrderIds = [];
 
-  UnreadMessagesNotifier(this._storage, this._ws, this._myUserId, this._ref)
-      : super(_storage.unreadOrderIds) {
+  @override
+  Set<String> build() {
+    _storage = ref.watch(storageServiceProvider);
+    _ws = ref.watch(wsClientProvider);
+    _myUserId = ref.watch(authProvider).userId;
+    _disposed = false;
+
+    ref.listen<DashboardState>(
+      dashboardProvider,
+      (_, next) => syncActiveOrders(next.orders),
+      fireImmediately: true,
+    );
+
+    ref.onDispose(() {
+      _disposed = true;
+      _sub?.cancel();
+      _pollTimer?.cancel();
+    });
+
     _subscribeWs();
     _schedulePoll();
+
+    return _storage.unreadOrderIds;
   }
 
   void syncActiveOrders(List<OrderModel> orders) {
@@ -83,7 +108,7 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
       final active = List<String>.from(_activeOrderIds);
       if (active.isEmpty) return;
 
-      final client = _ref.read(graphqlClientProvider);
+      final client = ref.read(graphqlClientProvider);
 
       for (final orderId in active) {
         if (_disposed) return;
@@ -142,7 +167,7 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
     await _storage.markOrderUnread(orderId);
     if (!_disposed) state = Set<String>.from(state)..add(orderId);
 
-    final activeChat = _ref.read(activeChatOrderIdProvider);
+    final activeChat = ref.read(activeChatOrderIdProvider);
     if (activeChat != orderId) {
       await NotificationService.showNewMessage(orderId, text);
     }
@@ -154,7 +179,7 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
     // re-notify about messages the user just read.
     final msgs = <MessageModel>[];
     try {
-      final client = _ref.read(graphqlClientProvider);
+      final client = ref.read(graphqlClientProvider);
       final result = await client.query(QueryOptions(
         document: gql(kMessagesQuery),
         variables: {'orderId': orderId},
@@ -182,30 +207,7 @@ class UnreadMessagesNotifier extends StateNotifier<Set<String>> {
       state = Set<String>.from(state)..addAll(ids);
     }
   }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    _sub?.cancel();
-    _pollTimer?.cancel();
-    super.dispose();
-  }
 }
 
 final unreadMessagesProvider =
-    StateNotifierProvider<UnreadMessagesNotifier, Set<String>>((ref) {
-  final storage = ref.watch(storageServiceProvider);
-  final ws = ref.watch(wsClientProvider);
-  final auth = ref.watch(authProvider);
-  final notifier = UnreadMessagesNotifier(storage, ws, auth.userId, ref);
-
-  // Keep dashboardProvider alive and sync active orders so _pollMessages
-  // always has a fresh list regardless of which screen is open.
-  ref.listen<DashboardState>(
-    dashboardProvider,
-    (_, next) => notifier.syncActiveOrders(next.orders),
-    fireImmediately: true,
-  );
-
-  return notifier;
-});
+    NotifierProvider<UnreadMessagesNotifier, Set<String>>(UnreadMessagesNotifier.new);

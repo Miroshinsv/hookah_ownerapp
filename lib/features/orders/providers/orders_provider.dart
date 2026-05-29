@@ -57,10 +57,25 @@ class OrdersState {
       );
 }
 
-class OrdersNotifier extends StateNotifier<OrdersState> {
-  final GraphQLClient _client;
+class OrdersNotifier extends Notifier<OrdersState> {
+  late GraphQLClient _client;
 
-  OrdersNotifier(this._client) : super(const OrdersState());
+  @override
+  OrdersState build() {
+    _client = ref.watch(graphqlClientProvider);
+
+    ref.listen<DashboardState>(
+      dashboardProvider,
+      (_, next) => syncFromDashboard(next.orders),
+    );
+
+    Future.microtask(() {
+      if (!ref.mounted) return;
+      syncFromDashboard(ref.read(dashboardProvider).orders);
+    });
+
+    return const OrdersState();
+  }
 
   void applyStatusUpdate(String id, String statusStr) {
     final status = OrderStatusX.fromString(statusStr);
@@ -71,7 +86,6 @@ class OrdersNotifier extends StateNotifier<OrdersState> {
     state = state.copyWith(orders: updated);
   }
 
-  // Called by the provider when dashboardProvider updates.
   void syncFromDashboard(List<OrderModel> orders) {
     final sorted = [...orders]..sort(_sortOrders);
     state = state.copyWith(orders: sorted, loading: false);
@@ -154,16 +168,4 @@ class OrdersNotifier extends StateNotifier<OrdersState> {
 }
 
 final ordersProvider =
-    StateNotifierProvider.autoDispose<OrdersNotifier, OrdersState>((ref) {
-  final client = ref.watch(graphqlClientProvider);
-  final notifier = OrdersNotifier(client);
-
-  // Seed immediately and keep in sync with dashboardProvider polling.
-  ref.listen<DashboardState>(
-    dashboardProvider,
-    (_, next) => notifier.syncFromDashboard(next.orders),
-    fireImmediately: true,
-  );
-
-  return notifier;
-});
+    NotifierProvider.autoDispose<OrdersNotifier, OrdersState>(OrdersNotifier.new);

@@ -78,7 +78,7 @@ class NotificationService {
       requestSoundPermission: true,
     );
     await _plugin.initialize(
-      InitializationSettings(android: androidSettings, iOS: iosSettings),
+      settings: InitializationSettings(android: androidSettings, iOS: iosSettings),
       onDidReceiveNotificationResponse: _onNotificationTap,
     );
 
@@ -113,10 +113,10 @@ class NotificationService {
     try {
       final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
       await _plugin.show(
-        orderId.hashCode ^ 0x8000,
-        'Новое сообщение #$shortId',
-        text.isNotEmpty ? text : 'Сообщение от клиента',
-        NotificationDetails(
+        id: orderId.hashCode ^ 0x8000,
+        title: 'Новое сообщение #$shortId',
+        body: text.isNotEmpty ? text : 'Сообщение от клиента',
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _msgChannelId, _msgChannelName,
             importance: Importance.high,
@@ -143,10 +143,10 @@ class NotificationService {
     if (!_initialized) return;
     try {
       await _plugin.show(
-        loungeId.hashCode ^ 0xC000,
-        'Чат — $loungeName',
-        text.isNotEmpty ? text : 'Новое сообщение',
-        NotificationDetails(
+        id: loungeId.hashCode ^ 0xC000,
+        title: 'Чат — $loungeName',
+        body: text.isNotEmpty ? text : 'Новое сообщение',
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _msgChannelId, _msgChannelName,
             importance: Importance.high,
@@ -173,10 +173,10 @@ class NotificationService {
     try {
       final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
       await _plugin.show(
-        orderId.hashCode,
-        'Новый заказ #$shortId',
-        'Поступил новый заказ',
-        NotificationDetails(
+        id: orderId.hashCode,
+        title: 'Новый заказ #$shortId',
+        body: 'Поступил новый заказ',
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId, _channelName,
             channelDescription: 'Уведомления о новых заказах',
@@ -213,17 +213,17 @@ class NotificationService {
     _alertTimer?.cancel();
     _alertTimer = null;
     try { Vibration.cancel(); } catch (_) {}
-    if (_initialized) await _plugin.cancel(_alertNotifId);
+    if (_initialized) await _plugin.cancel(id: _alertNotifId);
   }
 
   static Future<void> _playAlertOnce() async {
     if (!_initialized) return;
     try {
       await _plugin.show(
-        _alertNotifId,
-        'Новый заказ ожидает!',
-        'Есть необработанные заказы',
-        NotificationDetails(
+        id: _alertNotifId,
+        title: 'Новый заказ ожидает!',
+        body: 'Есть необработанные заказы',
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId, _channelName,
             importance: Importance.max,

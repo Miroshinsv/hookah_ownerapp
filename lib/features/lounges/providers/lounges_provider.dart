@@ -29,10 +29,15 @@ class LoungesState {
       );
 }
 
-class LoungesNotifier extends StateNotifier<LoungesState> {
-  final GraphQLClient _client;
+class LoungesNotifier extends Notifier<LoungesState> {
+  late GraphQLClient _client;
 
-  LoungesNotifier(this._client) : super(const LoungesState());
+  @override
+  LoungesState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const LoungesState();
+  }
 
   Future<void> fetch() async {
     state = state.copyWith(loading: true, clearError: true);
@@ -215,9 +220,4 @@ class LoungesNotifier extends StateNotifier<LoungesState> {
 }
 
 final loungesProvider =
-    StateNotifierProvider.autoDispose<LoungesNotifier, LoungesState>((ref) {
-  final client = ref.watch(graphqlClientProvider);
-  final notifier = LoungesNotifier(client);
-  notifier.fetch();
-  return notifier;
-});
+    NotifierProvider.autoDispose<LoungesNotifier, LoungesState>(LoungesNotifier.new);

@@ -64,19 +64,29 @@ class DashboardState {
       );
 }
 
-class DashboardNotifier extends StateNotifier<DashboardState> {
-  final GraphQLClient _client;
-  final WsClient _ws;
+class DashboardNotifier extends Notifier<DashboardState> {
+  late GraphQLClient _client;
+  late WsClient _ws;
   StreamSubscription? _wsSub;
   Timer? _timer;
-
-  DashboardNotifier(this._client, this._ws) : super(const DashboardState()) {
-    fetch();
-    _startPolling();
-    _subscribeWs();
-  }
-
   bool _fetching = false;
+
+  @override
+  DashboardState build() {
+    _client = ref.watch(graphqlClientProvider);
+    _ws = ref.watch(wsClientProvider);
+
+    _subscribeWs();
+    _startPolling();
+    Future.microtask(fetch);
+
+    ref.onDispose(() {
+      _timer?.cancel();
+      _wsSub?.cancel();
+    });
+
+    return const DashboardState();
+  }
 
   Future<void> fetch() async {
     if (_fetching) return;
@@ -209,18 +219,7 @@ class DashboardNotifier extends StateNotifier<DashboardState> {
     if (p != 0) return p;
     return b.createdAt.compareTo(a.createdAt);
   }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _wsSub?.cancel();
-    super.dispose();
-  }
 }
 
 final dashboardProvider =
-    StateNotifierProvider.autoDispose<DashboardNotifier, DashboardState>((ref) {
-  final client = ref.watch(graphqlClientProvider);
-  final ws = ref.watch(wsClientProvider);
-  return DashboardNotifier(client, ws);
-});
+    NotifierProvider.autoDispose<DashboardNotifier, DashboardState>(DashboardNotifier.new);

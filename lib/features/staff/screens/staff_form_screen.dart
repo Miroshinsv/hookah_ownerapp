@@ -166,7 +166,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
       DateTime(_scheduleMonth.year, _scheduleMonth.month + 1, 1));
 
   void _changeMonth(DateTime newMonth) {
-    for (final c in _dayCtrl.values) c.dispose();
+    for (final c in _dayCtrl.values) { c.dispose(); }
     setState(() {
       _scheduleMonth = newMonth;
       _dayCtrl.clear();
@@ -187,7 +187,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     if (_loadedScheduleKey == key) return;
     if (!mounted) return;
 
-    for (final c in _dayCtrl.values) c.dispose();
+    for (final c in _dayCtrl.values) { c.dispose(); }
     setState(() {
       _loadingSchedule = true;
       _dayCtrl.clear();

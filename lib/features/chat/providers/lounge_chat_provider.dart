@@ -29,19 +29,25 @@ class LoungeChatState {
       );
 }
 
-class LoungeChatNotifier extends StateNotifier<LoungeChatState> {
-  final GraphQLClient _client;
-  final String loungeId;
+class LoungeChatNotifier extends Notifier<LoungeChatState> {
+  final String _loungeId;
+  late GraphQLClient _client;
 
-  LoungeChatNotifier(this._client, this.loungeId)
-      : super(const LoungeChatState());
+  LoungeChatNotifier(this._loungeId);
+
+  @override
+  LoungeChatState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const LoungeChatState();
+  }
 
   Future<void> fetch() async {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final result = await _client.query(QueryOptions(
         document: gql(kLoungeChatMessagesQuery),
-        variables: {'loungeId': loungeId, 'limit': 100},
+        variables: {'loungeId': _loungeId, 'limit': 100},
       ));
       if (result.hasException) throw result.exception!;
 
@@ -70,7 +76,7 @@ class LoungeChatNotifier extends StateNotifier<LoungeChatState> {
     try {
       final result = await _client.mutate(MutationOptions(
         document: gql(kSendLoungeChatMessageMutation),
-        variables: {'loungeId': loungeId, 'text': text},
+        variables: {'loungeId': _loungeId, 'text': text},
       ));
       if (result.hasException) {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
@@ -84,10 +90,7 @@ class LoungeChatNotifier extends StateNotifier<LoungeChatState> {
   }
 }
 
-final loungeChatProvider = StateNotifierProvider.autoDispose
-    .family<LoungeChatNotifier, LoungeChatState, String>((ref, loungeId) {
-  final client = ref.watch(graphqlClientProvider);
-  final notifier = LoungeChatNotifier(client, loungeId);
-  notifier.fetch();
-  return notifier;
-});
+final loungeChatProvider = NotifierProvider.autoDispose
+    .family<LoungeChatNotifier, LoungeChatState, String>(
+  (loungeId) => LoungeChatNotifier(loungeId),
+);

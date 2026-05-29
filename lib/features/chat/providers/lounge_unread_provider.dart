@@ -12,19 +12,46 @@ import '../../auth/providers/auth_provider.dart';
 import '../../lounges/providers/lounges_provider.dart';
 
 /// The loungeId currently open in LoungeChatScreen — suppress notifications.
-final activeLoungeChatIdProvider = StateProvider<String?>((ref) => null);
+class _ActiveLoungeChatNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void set(String? value) => state = value;
+}
 
-class LoungeUnreadNotifier extends StateNotifier<Set<String>> {
-  final StorageService _storage;
-  final WsClient _ws;
-  final String? _myUserId;
-  final Ref _ref;
+final activeLoungeChatIdProvider =
+    NotifierProvider<_ActiveLoungeChatNotifier, String?>(_ActiveLoungeChatNotifier.new);
+
+class LoungeUnreadNotifier extends Notifier<Set<String>> {
+  late StorageService _storage;
+  late WsClient _ws;
+  String? _myUserId;
   final _subs = <String, StreamSubscription>{};
   final _loungeNames = <String, String>{};
   bool _disposed = false;
 
-  LoungeUnreadNotifier(this._storage, this._ws, this._myUserId, this._ref)
-      : super(_storage.unreadLoungeChatIds);
+  @override
+  Set<String> build() {
+    _storage = ref.watch(storageServiceProvider);
+    _ws = ref.watch(wsClientProvider);
+    _myUserId = ref.watch(authProvider).userId;
+    _disposed = false;
+
+    ref.listen<LoungesState>(
+      loungesProvider,
+      (_, next) => updateLounges(next.lounges),
+      fireImmediately: true,
+    );
+
+    ref.onDispose(() {
+      _disposed = true;
+      for (final sub in _subs.values) {
+        sub.cancel();
+      }
+      debugPrint('LoungeUnreadNotifier disposed');
+    });
+
+    return _storage.unreadLoungeChatIds;
+  }
 
   void updateLounges(List<LoungeModel> lounges) {
     if (_disposed) return;
@@ -70,7 +97,7 @@ class LoungeUnreadNotifier extends StateNotifier<Set<String>> {
       String loungeId, String loungeName, String text) async {
     await _storage.markLoungeChatUnread(loungeId);
     if (!_disposed) state = Set<String>.from(state)..add(loungeId);
-    final active = _ref.read(activeLoungeChatIdProvider);
+    final active = ref.read(activeLoungeChatIdProvider);
     if (active != loungeId) {
       await NotificationService.showNewLoungeChatMessage(
           loungeId, loungeName, text);
@@ -89,30 +116,7 @@ class LoungeUnreadNotifier extends StateNotifier<Set<String>> {
       state = Set<String>.from(state)..addAll(ids);
     }
   }
-
-  @override
-  void dispose() {
-    _disposed = true;
-    for (final sub in _subs.values) {
-      sub.cancel();
-    }
-    debugPrint('LoungeUnreadNotifier disposed');
-    super.dispose();
-  }
 }
 
 final loungeUnreadProvider =
-    StateNotifierProvider<LoungeUnreadNotifier, Set<String>>((ref) {
-  final storage = ref.watch(storageServiceProvider);
-  final ws = ref.watch(wsClientProvider);
-  final auth = ref.watch(authProvider);
-  final notifier = LoungeUnreadNotifier(storage, ws, auth.userId, ref);
-
-  ref.listen<LoungesState>(
-    loungesProvider,
-    (_, next) => notifier.updateLounges(next.lounges),
-    fireImmediately: true,
-  );
-
-  return notifier;
-});
+    NotifierProvider<LoungeUnreadNotifier, Set<String>>(LoungeUnreadNotifier.new);

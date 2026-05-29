@@ -79,7 +79,7 @@ void _onStart(ServiceInstance service) async {
   // Try custom hookah icon, fall back to launcher icon
   for (final icon in ['@drawable/ic_notification', '@mipmap/ic_launcher']) {
     final ok = await plugin.initialize(
-          InitializationSettings(
+          settings: InitializationSettings(
             android: AndroidInitializationSettings(icon),
           ),
         ) ??
@@ -201,10 +201,10 @@ Future<void> _checkNewOrders(
       ].join(' · ');
 
       await plugin.show(
-        id.hashCode,
-        'Новый заказ #$shortId',
-        body.isNotEmpty ? body : 'Поступил новый заказ',
-        NotificationDetails(
+        id: id.hashCode,
+        title: 'Новый заказ #$shortId',
+        body: body.isNotEmpty ? body : 'Поступил новый заказ',
+        notificationDetails: NotificationDetails(
           android: AndroidNotificationDetails(
             _channelId,
             _channelName,
@@ -363,10 +363,10 @@ Future<void> _checkOrderMessages(
     final text = latest['text'] as String? ?? '';
     final shortId = orderId.substring(0, orderId.length.clamp(0, 8));
     await plugin.show(
-      orderId.hashCode ^ 0x7F000,
-      'Новое сообщение #$shortId',
-      text.isNotEmpty ? text : 'Сообщение от клиента',
-      NotificationDetails(
+      id: orderId.hashCode ^ 0x7F000,
+      title: 'Новое сообщение #$shortId',
+      body: text.isNotEmpty ? text : 'Сообщение от клиента',
+      notificationDetails: NotificationDetails(
         android: AndroidNotificationDetails(
           _msgChannelId,
           _msgChannelName,

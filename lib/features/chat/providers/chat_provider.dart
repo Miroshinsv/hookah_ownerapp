@@ -29,18 +29,25 @@ class ChatState {
       );
 }
 
-class ChatNotifier extends StateNotifier<ChatState> {
-  final GraphQLClient _client;
-  final String orderId;
+class ChatNotifier extends Notifier<ChatState> {
+  final String _orderId;
+  late GraphQLClient _client;
 
-  ChatNotifier(this._client, this.orderId) : super(const ChatState());
+  ChatNotifier(this._orderId);
+
+  @override
+  ChatState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const ChatState();
+  }
 
   Future<void> fetch() async {
     state = state.copyWith(loading: true, clearError: true);
     try {
       final result = await _client.query(QueryOptions(
         document: gql(kMessagesQuery),
-        variables: {'orderId': orderId},
+        variables: {'orderId': _orderId},
       ));
       if (result.hasException) throw result.exception!;
 
@@ -67,7 +74,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     try {
       final result = await _client.mutate(MutationOptions(
         document: gql(kSendMessageMutation),
-        variables: {'orderId': orderId, 'text': text},
+        variables: {'orderId': _orderId, 'text': text},
       ));
       if (result.hasException) {
         return result.exception?.graphqlErrors.firstOrNull?.message ??
@@ -81,10 +88,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 }
 
-final chatProviderFamily = StateNotifierProvider.autoDispose
-    .family<ChatNotifier, ChatState, String>((ref, orderId) {
-  final client = ref.watch(graphqlClientProvider);
-  final notifier = ChatNotifier(client, orderId);
-  notifier.fetch();
-  return notifier;
-});
+final chatProviderFamily = NotifierProvider.autoDispose
+    .family<ChatNotifier, ChatState, String>(
+  (orderId) => ChatNotifier(orderId),
+);

@@ -31,7 +31,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeChatOrderIdProvider.notifier).state = widget.orderId;
+      ref.read(activeChatOrderIdProvider.notifier).set(widget.orderId);
       _markRead();
       _startSubscription();
       _startPolling();
@@ -113,7 +113,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void dispose() {
     if (ref.read(activeChatOrderIdProvider) == widget.orderId) {
-      ref.read(activeChatOrderIdProvider.notifier).state = null;
+      ref.read(activeChatOrderIdProvider.notifier).set(null);
     }
     _sub?.cancel();
     _pollTimer?.cancel();

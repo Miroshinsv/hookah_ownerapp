@@ -37,17 +37,21 @@ class LoungeRatingsState {
 
 // ── Нотификатор ───────────────────────────────────────────────────────────────
 
-class LoungeRatingsNotifier extends StateNotifier<LoungeRatingsState> {
-  final GraphQLClient _client;
+class LoungeRatingsNotifier extends Notifier<LoungeRatingsState> {
   final String _loungeId;
+  late GraphQLClient _client;
 
-  LoungeRatingsNotifier(this._client, this._loungeId)
-      : super(const LoungeRatingsState(loading: true)) {
-    fetch();
+  LoungeRatingsNotifier(this._loungeId);
+
+  @override
+  LoungeRatingsState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const LoungeRatingsState(loading: true);
   }
 
   Future<void> fetch() async {
-    if (!mounted) return;
+    if (!ref.mounted) return;
     state = state.copyWith(loading: true, clearError: true, clearAvg: true);
     try {
       final result = await _client.query(QueryOptions(
@@ -58,7 +62,7 @@ class LoungeRatingsNotifier extends StateNotifier<LoungeRatingsState> {
         },
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (!mounted) return;
+      if (!ref.mounted) return;
       if (result.hasException) throw result.exception!;
 
       final stats =
@@ -73,7 +77,7 @@ class LoungeRatingsNotifier extends StateNotifier<LoungeRatingsState> {
         clearAvg: avg == null,
       );
     } catch (e) {
-      if (!mounted) return;
+      if (!ref.mounted) return;
       state = state.copyWith(
           loading: false, error: e.toString(), clearAvg: true);
     }
@@ -82,10 +86,7 @@ class LoungeRatingsNotifier extends StateNotifier<LoungeRatingsState> {
 
 // ── Family-провайдер: один экземпляр на loungeId ──────────────────────────────
 
-final loungeRatingsProvider = StateNotifierProvider.autoDispose
+final loungeRatingsProvider = NotifierProvider.autoDispose
     .family<LoungeRatingsNotifier, LoungeRatingsState, String>(
-  (ref, loungeId) {
-    final client = ref.watch(graphqlClientProvider);
-    return LoungeRatingsNotifier(client, loungeId);
-  },
+  (loungeId) => LoungeRatingsNotifier(loungeId),
 );

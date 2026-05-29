@@ -36,23 +36,26 @@ class AuthState {
       );
 }
 
-class AuthNotifier extends StateNotifier<AuthState> {
-  final StorageService _storage;
+class AuthNotifier extends Notifier<AuthState> {
+  late StorageService _storage;
 
-  AuthNotifier(this._storage) : super(const AuthState()) {
-    _loadFromStorage();
+  @override
+  AuthState build() {
+    _storage = ref.read(storageServiceProvider);
+    return _loadFromStorage();
   }
 
-  void _loadFromStorage() {
+  AuthState _loadFromStorage() {
     final token = _storage.token;
     if (token != null && token.isNotEmpty) {
-      state = AuthState(
+      return AuthState(
         token: token,
         role: _storage.role,
         loungeId: _storage.loungeId,
         userId: _storage.userId,
       );
     }
+    return const AuthState();
   }
 
   Future<String?> login(String userId, String password) async {
@@ -104,9 +107,7 @@ final storageServiceProvider = Provider<StorageService>((ref) {
   throw UnimplementedError('Initialize with override in main');
 });
 
-final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
-  return AuthNotifier(ref.read(storageServiceProvider));
-});
+final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
 
 final graphqlClientProvider = Provider<GraphQLClient>((ref) {
   final auth = ref.watch(authProvider);

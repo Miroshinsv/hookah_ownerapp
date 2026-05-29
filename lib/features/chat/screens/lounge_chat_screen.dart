@@ -36,7 +36,7 @@ class _LoungeChatScreenState extends ConsumerState<LoungeChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(activeLoungeChatIdProvider.notifier).state = widget.loungeId;
+      ref.read(activeLoungeChatIdProvider.notifier).set(widget.loungeId);
       ref.read(loungeUnreadProvider.notifier).markRead(widget.loungeId);
       _startSubscription();
       _startPolling();
@@ -108,7 +108,7 @@ class _LoungeChatScreenState extends ConsumerState<LoungeChatScreen> {
 
   @override
   void dispose() {
-    ref.read(activeLoungeChatIdProvider.notifier).state = null;
+    ref.read(activeLoungeChatIdProvider.notifier).set(null);
     _sub?.cancel();
     _pollTimer?.cancel();
     _scrollCtrl.dispose();
