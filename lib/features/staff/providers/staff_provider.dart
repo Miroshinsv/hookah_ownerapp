@@ -112,13 +112,14 @@ class StaffNotifier extends StateNotifier<StaffState> {
   }
 
   Future<String?> setStaffSchedule(
-      String staffId, String loungeId, String schedule) async {
+      String staffId, String loungeId, String month, String schedule) async {
     try {
       final result = await _client.mutate(MutationOptions(
         document: gql(kSetStaffScheduleMutation),
         variables: {
           'staffId': staffId,
           'loungeId': loungeId,
+          'month': month,
           'schedule': schedule,
         },
       ));
@@ -132,11 +133,12 @@ class StaffNotifier extends StateNotifier<StaffState> {
     }
   }
 
-  Future<String?> getStaffSchedule(String staffId, String loungeId) async {
+  Future<String?> getStaffSchedule(
+      String staffId, String loungeId, String month) async {
     try {
       final result = await _client.query(QueryOptions(
         document: gql(kStaffScheduleQuery),
-        variables: {'staffId': staffId, 'loungeId': loungeId},
+        variables: {'staffId': staffId, 'loungeId': loungeId, 'month': month},
         fetchPolicy: FetchPolicy.networkOnly,
       ));
       if (result.hasException) return null;

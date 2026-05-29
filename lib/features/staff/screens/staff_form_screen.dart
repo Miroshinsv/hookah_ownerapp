@@ -34,16 +34,12 @@ class StaffFormScreen extends ConsumerStatefulWidget {
 }
 
 class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
-  static const _days = [
-    ('mon', 'Пн'),
-    ('tue', 'Вт'),
-    ('wed', 'Ср'),
-    ('thu', 'Чт'),
-    ('fri', 'Пт'),
-    ('sat', 'Сб'),
-    ('sun', 'Вс'),
-  ];
   static const _defaultTime = '10:00-22:00';
+  static const _monthNames = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+  ];
+  static const _weekLabels = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
   final _formKey = GlobalKey<FormState>();
   final _userIdCtrl = TextEditingController();
@@ -56,8 +52,11 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _loungeSearchCtrl = TextEditingController();
-  late final Map<String, TextEditingController> _scheduleCtrl;
-  late final Map<String, bool> _workDays;
+
+  // Monthly schedule state
+  DateTime _scheduleMonth = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  final Map<int, TextEditingController> _dayCtrl = {};
+  final Set<int> _workDays = {};
 
   List<String> _selectedRoles = [];
   List<String> _selectedLoungeIds = [];
@@ -70,7 +69,20 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   String? _generatedPassword;
   bool _staffLoaded = false;
   String? _photoUrl;
-  String? _loadedScheduleLoungeId;
+  String? _loadedScheduleKey;
+
+  String get _monthKey {
+    final m = _scheduleMonth.month.toString().padLeft(2, '0');
+    return '${_scheduleMonth.year}-$m';
+  }
+
+  int get _daysInMonth =>
+      DateTime(_scheduleMonth.year, _scheduleMonth.month + 1, 0).day;
+
+  String _dayOfWeekLabel(int day) {
+    final date = DateTime(_scheduleMonth.year, _scheduleMonth.month, day);
+    return _weekLabels[date.weekday - 1];
+  }
 
   bool get _isEdit => widget.staffId != null;
   bool get _needsLounge => _selectedRoles.any((r) => r != 'admin');
@@ -78,10 +90,6 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
   @override
   void initState() {
     super.initState();
-    _scheduleCtrl = {
-      for (final d in _days) d.$1: TextEditingController(text: _defaultTime),
-    };
-    _workDays = {for (final d in _days) d.$1: false};
     if (widget.preselectedLoungeId != null) {
       _selectedLoungeIds = [widget.preselectedLoungeId!];
     }
@@ -138,42 +146,75 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
 
   // ──────────────────────────── schedule ────────────────────────────
 
-  Future<void> _loadScheduleForLounge(String loungeId) async {
-    if (_loadedScheduleLoungeId == loungeId) return;
-    if (!mounted) return;
-
-    // Сбрасываем в исходное состояние перед загрузкой
+  void _toggleDay(int day) {
     setState(() {
-      _loadingSchedule = true;
-      for (final d in _days) {
-        _workDays[d.$1] = false;
+      if (_workDays.contains(day)) {
+        _workDays.remove(day);
+        _dayCtrl[day]?.dispose();
+        _dayCtrl.remove(day);
+      } else {
+        _workDays.add(day);
+        _dayCtrl[day] = TextEditingController(text: _defaultTime);
       }
     });
-    for (final d in _days) {
-      _scheduleCtrl[d.$1]!.text = _defaultTime;
+  }
+
+  void _prevMonth() => _changeMonth(
+      DateTime(_scheduleMonth.year, _scheduleMonth.month - 1, 1));
+
+  void _nextMonth() => _changeMonth(
+      DateTime(_scheduleMonth.year, _scheduleMonth.month + 1, 1));
+
+  void _changeMonth(DateTime newMonth) {
+    for (final c in _dayCtrl.values) c.dispose();
+    setState(() {
+      _scheduleMonth = newMonth;
+      _dayCtrl.clear();
+      _workDays.clear();
+      _loadedScheduleKey = null;
+    });
+    if (_isEdit) {
+      final loungeId =
+          _scheduleSelectedLoungeId ?? _selectedLoungeIds.firstOrNull;
+      if (loungeId != null && widget.staffId != null) {
+        _loadScheduleForLounge(loungeId);
+      }
     }
+  }
+
+  Future<void> _loadScheduleForLounge(String loungeId) async {
+    final key = '$loungeId-$_monthKey';
+    if (_loadedScheduleKey == key) return;
+    if (!mounted) return;
+
+    for (final c in _dayCtrl.values) c.dispose();
+    setState(() {
+      _loadingSchedule = true;
+      _dayCtrl.clear();
+      _workDays.clear();
+    });
 
     final scheduleJson = await ref
         .read(staffProvider.notifier)
-        .getStaffSchedule(widget.staffId!, loungeId);
+        .getStaffSchedule(widget.staffId!, loungeId, _monthKey);
 
     if (!mounted) return;
 
-    // Применяем данные с сервера
     if (scheduleJson != null && scheduleJson.isNotEmpty) {
       try {
         final map = jsonDecode(scheduleJson) as Map<String, dynamic>;
-        for (final d in _days) {
-          _workDays[d.$1] = map.containsKey(d.$1);
-          if (map.containsKey(d.$1)) {
-            _scheduleCtrl[d.$1]!.text = map[d.$1] as String;
-          }
+        for (final entry in map.entries) {
+          final day = int.tryParse(entry.key);
+          if (day == null) continue;
+          _workDays.add(day);
+          _dayCtrl[day] =
+              TextEditingController(text: entry.value as String);
         }
       } catch (_) {}
     }
 
     setState(() {
-      _loadedScheduleLoungeId = loungeId;
+      _loadedScheduleKey = key;
       _loadingSchedule = false;
     });
   }
@@ -188,11 +229,11 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     setState(() => _savingSchedule = true);
     final err = await ref
         .read(staffProvider.notifier)
-        .setStaffSchedule(widget.staffId!, loungeId, jsonEncode(map));
+        .setStaffSchedule(widget.staffId!, loungeId, _monthKey, jsonEncode(map));
     if (!mounted) return;
     setState(() {
       _savingSchedule = false;
-      if (err == null) _loadedScheduleLoungeId = null;
+      if (err == null) _loadedScheduleKey = null;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(err ?? 'Расписание сохранено')),
@@ -207,22 +248,21 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     for (final loungeId in _selectedLoungeIds) {
       await ref
           .read(staffProvider.notifier)
-          .setStaffSchedule(staffId, loungeId, scheduleJson);
+          .setStaffSchedule(staffId, loungeId, _monthKey, scheduleJson);
     }
   }
 
   Map<String, String> _buildScheduleMap() {
     final map = <String, String>{};
-    for (final d in _days) {
-      if (_workDays[d.$1] == true) {
-        final v = _scheduleCtrl[d.$1]!.text.trim();
-        map[d.$1] = v.isNotEmpty ? v : _defaultTime;
-      }
+    for (final day in _workDays) {
+      final key = day.toString().padLeft(2, '0');
+      final v = _dayCtrl[day]?.text.trim() ?? _defaultTime;
+      map[key] = v.isNotEmpty ? v : _defaultTime;
     }
     return map;
   }
 
-  bool get _hasAnySchedule => _workDays.values.any((v) => v);
+  bool get _hasAnySchedule => _workDays.isNotEmpty;
 
   // ──────────────────────────── misc ────────────────────────────
 
@@ -233,7 +273,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _loungeSearchCtrl.dispose();
-    for (final c in _scheduleCtrl.values) {
+    for (final c in _dayCtrl.values) {
       c.dispose();
     }
     super.dispose();
@@ -336,55 +376,147 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
 
   // ──────────────────────────── UI helpers ────────────────────────────
 
-  /// Строка одного дня в расписании (переиспользуется в edit и create).
-  Widget _buildDayRow((String, String) d) {
-    final isWorking = _workDays[d.$1] ?? false;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 28,
-            child: Text(
-              d.$2,
-              style:
-                  const TextStyle(color: AppColors.muted, fontSize: 13),
+  Widget _buildMonthCalendar() {
+    final firstWeekday =
+        DateTime(_scheduleMonth.year, _scheduleMonth.month, 1).weekday;
+    final days = _daysInMonth;
+    final cellCount = firstWeekday - 1 + days;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Month navigation
+        Row(
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chevron_left, color: AppColors.muted),
+              onPressed: _prevMonth,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-          ),
-          Switch(
-            value: isWorking,
-            activeThumbColor: AppColors.gold,
-            onChanged: (on) => setState(() {
-              _workDays[d.$1] = on;
-              if (on && _scheduleCtrl[d.$1]!.text.trim().isEmpty) {
-                _scheduleCtrl[d.$1]!.text = _defaultTime;
-              }
-            }),
-          ),
-          if (isWorking)
             Expanded(
-              child: TextFormField(
-                controller: _scheduleCtrl[d.$1],
-                decoration: const InputDecoration(
-                  hintText: '10:00-22:00',
-                  isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Center(
+                child: Text(
+                  '${_monthNames[_scheduleMonth.month - 1]} ${_scheduleMonth.year}',
+                  style: const TextStyle(
+                    color: AppColors.text,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                style:
-                    const TextStyle(color: AppColors.text, fontSize: 13),
-              ),
-            )
-          else
-            const Expanded(
-              child: Text(
-                'выходной',
-                style:
-                    TextStyle(color: AppColors.muted, fontSize: 13),
               ),
             ),
+            IconButton(
+              icon: const Icon(Icons.chevron_right, color: AppColors.muted),
+              onPressed: _nextMonth,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        // Day-of-week headers
+        Row(
+          children: _weekLabels
+              .map((d) => Expanded(
+                    child: Center(
+                      child: Text(d,
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 11)),
+                    ),
+                  ))
+              .toList(),
+        ),
+        const SizedBox(height: 4),
+        // Calendar grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            childAspectRatio: 1.1,
+            mainAxisSpacing: 2,
+            crossAxisSpacing: 2,
+          ),
+          itemCount: cellCount,
+          itemBuilder: (_, i) {
+            if (i < firstWeekday - 1) return const SizedBox.shrink();
+            final day = i - firstWeekday + 2;
+            final isWorking = _workDays.contains(day);
+            return GestureDetector(
+              onTap: () => _toggleDay(day),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isWorking
+                      ? AppColors.gold
+                      : AppColors.surface2,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Center(
+                  child: Text(
+                    '$day',
+                    style: TextStyle(
+                      color: isWorking
+                          ? Colors.black
+                          : AppColors.text,
+                      fontSize: 12,
+                      fontWeight: isWorking
+                          ? FontWeight.w700
+                          : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        // Working days time inputs
+        if (_workDays.isEmpty)
+          const Text(
+            'Нажмите на день, чтобы отметить рабочим',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          )
+        else ...[
+          const Text(
+            'Часы работы',
+            style: TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
+          ...(_workDays.toList()..sort()).map((day) {
+            final label =
+                '${day.toString().padLeft(2, '0')} ${_dayOfWeekLabel(day)}';
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 48,
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                          color: AppColors.muted, fontSize: 13),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextFormField(
+                      controller: _dayCtrl[day],
+                      decoration: const InputDecoration(
+                        hintText: '10:00-22:00',
+                        isDense: true,
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                      ),
+                      style: const TextStyle(
+                          color: AppColors.text, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
         ],
-      ),
+      ],
     );
   }
 
@@ -685,7 +817,6 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
             ],
 
             // ── Расписание — СОЗДАНИЕ ──
-            // Показываем как только выбрана кальянная (роль может быть не выбрана ещё)
             if (!_isEdit && _selectedLoungeIds.isNotEmpty) ...[
               const Divider(color: AppColors.border, height: 32),
               const Text(
@@ -702,7 +833,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                 style: TextStyle(color: AppColors.muted, fontSize: 11),
               ),
               const SizedBox(height: 10),
-              ..._days.map(_buildDayRow),
+              _buildMonthCalendar(),
             ],
 
             // ── Расписание — РЕДАКТИРОВАНИЕ ──
@@ -758,12 +889,6 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                   ),
                   const SizedBox(height: 12),
                 ],
-                const Text(
-                  'Укажите время работы для каждого дня',
-                  style: TextStyle(
-                      color: AppColors.muted, fontSize: 11),
-                ),
-                const SizedBox(height: 10),
                 if (_loadingSchedule)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
@@ -774,7 +899,7 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
                     ),
                   )
                 else
-                  ..._days.map(_buildDayRow),
+                  _buildMonthCalendar(),
                 const SizedBox(height: 4),
                 LoadingButton(
                   label: 'Сохранить расписание',

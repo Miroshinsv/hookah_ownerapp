@@ -176,10 +176,11 @@ query StaffProfile($staffId: String!) {
 ''';
 
 const kStaffScheduleQuery = r'''
-query StaffSchedule($staffId: String!, $loungeId: String!) {
-  staffSchedule(staffId: $staffId, loungeId: $loungeId) {
+query StaffSchedule($staffId: String!, $loungeId: String!, $month: String!) {
+  staffSchedule(staffId: $staffId, loungeId: $loungeId, month: $month) {
     staffId
     loungeId
+    month
     schedule
   }
 }
@@ -273,10 +274,11 @@ mutation DeleteStaff($staffId: String!) {
 ''';
 
 const kSetStaffScheduleMutation = r'''
-mutation SetStaffSchedule($staffId: String!, $loungeId: String!, $schedule: String!) {
-  setStaffSchedule(staffId: $staffId, loungeId: $loungeId, schedule: $schedule) {
+mutation SetStaffSchedule($staffId: String!, $loungeId: String!, $month: String!, $schedule: String!) {
+  setStaffSchedule(staffId: $staffId, loungeId: $loungeId, month: $month, schedule: $schedule) {
     staffId
     loungeId
+    month
     schedule
   }
 }
