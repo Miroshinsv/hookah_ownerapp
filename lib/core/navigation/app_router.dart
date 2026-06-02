@@ -14,6 +14,7 @@ import '../../features/orders/screens/orders_screen.dart';
 import '../../features/shell/main_shell.dart';
 import '../../features/profile/screens/profile_screen.dart';
 import '../../features/staff/screens/staff_form_screen.dart';
+import '../../features/users/screens/user_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final auth = ref.watch(authProvider);
@@ -92,6 +93,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile',
         builder: (ctx, _) => const ProfileScreen(),
+      ),
+      GoRoute(
+        path: '/user/:userId',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>?;
+          return UserScreen(
+            userId: Uri.decodeComponent(state.pathParameters['userId']!),
+            firstName: extra?['firstName'] as String?,
+            lastName: extra?['lastName'] as String?,
+          );
+        },
       ),
     ],
     errorBuilder: (_, state) => Scaffold(

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../core/graphql/ws_client.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
 import '../../../shared/models/order_model.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../feedback/providers/lounge_feedback_provider.dart';
 import '../../lounges/providers/lounges_provider.dart';
+import '../../notes/providers/lounge_notes_provider.dart';
 import '../../ratings/providers/ratings_provider.dart';
 import '../providers/dashboard_provider.dart';
 
@@ -34,8 +37,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     _tabs.dispose();
     super.dispose();
   }
-
-  // ── Вспомогательные методы ──────────────────────────────────────────────────
 
   static Map<OrderStatus, int> _counts(
       List<OrderModel> orders, {
@@ -72,21 +73,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final loungesState = ref.watch(loungesProvider);
     final wsClient = ref.watch(wsClientProvider);
 
-    // Кальянные этого владельца (для admin — все)
     final myLounges = loungesState.lounges
         .where((l) => auth.isAdmin || l.ownerUserId == auth.userId)
         .toList();
 
-    // Запрашиваем рейтинги для каждой кальянной
     final ratingsByLounge = {
       for (final l in myLounges)
         l.id: ref.watch(loungeRatingsProvider(l.id)),
+    };
+    final feedbackByLounge = {
+      for (final l in myLounges)
+        l.id: ref.watch(loungeFeedbackProvider(l.id)),
+    };
+    final notesByLounge = {
+      for (final l in myLounges)
+        l.id: ref.watch(loungeNotesProvider(l.id)),
     };
 
     void doRefresh() {
       ref.read(dashboardProvider.notifier).fetch();
       for (final l in myLounges) {
         ref.read(loungeRatingsProvider(l.id).notifier).fetch();
+        ref.read(loungeFeedbackProvider(l.id).notifier).fetch();
+        ref.read(loungeNotesProvider(l.id).notifier).fetch();
       }
     }
 
@@ -136,6 +145,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     allOrders: dashState.orders,
                     lounges: myLounges,
                     ratingsByLounge: ratingsByLounge,
+                    feedbackByLounge: feedbackByLounge,
+                    notesByLounge: notesByLounge,
                     from: from,
                     loungesLoading: loungesState.loading,
                   );
@@ -181,6 +192,8 @@ class _PeriodPage extends StatelessWidget {
   final List<OrderModel> allOrders;
   final List<LoungeModel> lounges;
   final Map<String, LoungeRatingsState> ratingsByLounge;
+  final Map<String, LoungeFeedbackState> feedbackByLounge;
+  final Map<String, LoungeNotesState> notesByLounge;
   final DateTime from;
   final bool loungesLoading;
 
@@ -188,23 +201,49 @@ class _PeriodPage extends StatelessWidget {
     required this.allOrders,
     required this.lounges,
     required this.ratingsByLounge,
+    required this.feedbackByLounge,
+    required this.notesByLounge,
     required this.from,
     required this.loungesLoading,
   });
 
   @override
   Widget build(BuildContext context) {
-    // Суммарные показатели по всем кальянным
-    final loaded = ratingsByLounge.values.where((s) => !s.loading).toList();
-    final overallRatingsLoading =
+    // ── Агрегированные рейтинги ────────────────────────────────────────────────
+    final ratingsLoading =
         ratingsByLounge.values.any((s) => s.loading);
+    final ratingStatsList = ratingsByLounge.values
+        .where((s) => !s.loading)
+        .map((s) => s.statsFrom(from))
+        .toList();
+    final totalRatingCount =
+        ratingStatsList.fold(0, (acc, s) => acc + s.count);
+    final overallRatingAvg = totalRatingCount > 0
+        ? ratingStatsList.fold(0.0, (acc, s) => acc + (s.avg ?? 0.0) * s.count) /
+            totalRatingCount
+        : null;
 
-    // Взвешенное среднее: (sum of avg*count) / total_count
-    final totalCount = loaded.fold(0, (acc, s) => acc + s.count);
-    final weightedSum = loaded.fold(
-        0.0, (acc, s) => acc + (s.avgRating ?? 0.0) * s.count);
-    final overallAvg =
-        totalCount > 0 ? weightedSum / totalCount : null;
+    // ── Агрегированные отзывы ─────────────────────────────────────────────────
+    final feedbackLoading =
+        feedbackByLounge.values.any((s) => s.loading);
+    final feedbackStatsList = feedbackByLounge.values
+        .where((s) => !s.loading && s.error == null)
+        .map((s) => s.statsFrom(from))
+        .toList();
+    final totalFeedbackCount =
+        feedbackStatsList.fold(0, (acc, s) => acc + s.count);
+    final overallFeedbackAvg = totalFeedbackCount > 0
+        ? feedbackStatsList.fold(
+                0.0, (acc, s) => acc + (s.avg ?? 0.0) * s.count) /
+            totalFeedbackCount
+        : null;
+
+    // ── Агрегированные записки ────────────────────────────────────────────────
+    final notesLoading =
+        notesByLounge.values.any((s) => s.loading);
+    final totalNotesCount = notesByLounge.values
+        .where((s) => !s.loading && s.error == null)
+        .fold(0, (acc, s) => acc + s.countFrom(from));
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -212,18 +251,21 @@ class _PeriodPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Общая карточка ─────────────────────────────────────────────────
           _SummaryCard(
             counts: _DashboardScreenState._counts(allOrders, from: from),
-            avgRating: overallAvg,
-            ratingCount: totalCount,
-            ratingsLoading: overallRatingsLoading,
+            avgRating: overallRatingAvg,
+            ratingCount: totalRatingCount,
+            ratingsLoading: ratingsLoading,
             loungeCount: lounges.length,
+            avgFeedback: overallFeedbackAvg,
+            feedbackCount: totalFeedbackCount,
+            feedbackLoading: feedbackLoading,
+            notesCount: totalNotesCount,
+            notesLoading: notesLoading,
           ),
 
           const SizedBox(height: 16),
 
-          // ── Карточки по кальянным ─────────────────────────────────────────
           if (loungesLoading && lounges.isEmpty)
             const Center(
               child: Padding(
@@ -233,8 +275,14 @@ class _PeriodPage extends StatelessWidget {
             )
           else
             ...lounges.map((lounge) {
-              final rs = ratingsByLounge[lounge.id] ??
-                  const LoungeRatingsState();
+              final rs =
+                  ratingsByLounge[lounge.id] ?? const LoungeRatingsState();
+              final rStats = rs.statsFrom(from);
+
+              final fs =
+                  feedbackByLounge[lounge.id] ?? const LoungeFeedbackState();
+              final fStats = fs.statsFrom(from);
+
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: _LoungeCard(
@@ -244,10 +292,15 @@ class _PeriodPage extends StatelessWidget {
                     loungeId: lounge.id,
                     from: from,
                   ),
-                  avgRating: rs.avgRating,
-                  ratingCount: rs.count,
+                  avgRating: rStats.avg,
+                  ratingCount: rStats.count,
                   ratingsLoading: rs.loading,
                   ratingsError: rs.error,
+                  avgFeedback: fStats.avg,
+                  feedbackCount: fStats.count,
+                  feedbackLoading: fs.loading,
+                  showFeedback: fs.error == null,
+                  from: from,
                 ),
               );
             }),
@@ -265,6 +318,11 @@ class _SummaryCard extends StatelessWidget {
   final int ratingCount;
   final bool ratingsLoading;
   final int loungeCount;
+  final double? avgFeedback;
+  final int feedbackCount;
+  final bool feedbackLoading;
+  final int notesCount;
+  final bool notesLoading;
 
   const _SummaryCard({
     required this.counts,
@@ -272,6 +330,11 @@ class _SummaryCard extends StatelessWidget {
     required this.ratingCount,
     required this.ratingsLoading,
     required this.loungeCount,
+    required this.avgFeedback,
+    required this.feedbackCount,
+    required this.feedbackLoading,
+    required this.notesCount,
+    required this.notesLoading,
   });
 
   @override
@@ -309,6 +372,17 @@ class _SummaryCard extends StatelessWidget {
             count: ratingCount,
             loading: ratingsLoading,
           ),
+          const SizedBox(height: 6),
+          _FeedbackBadge(
+            avg: avgFeedback,
+            count: feedbackCount,
+            loading: feedbackLoading,
+          ),
+          const SizedBox(height: 6),
+          _NotesBadge(
+            count: notesCount,
+            loading: notesLoading,
+          ),
         ],
       ),
     );
@@ -324,6 +398,11 @@ class _LoungeCard extends StatelessWidget {
   final int ratingCount;
   final bool ratingsLoading;
   final String? ratingsError;
+  final double? avgFeedback;
+  final int feedbackCount;
+  final bool feedbackLoading;
+  final bool showFeedback;
+  final DateTime from;
 
   const _LoungeCard({
     required this.lounge,
@@ -332,6 +411,11 @@ class _LoungeCard extends StatelessWidget {
     required this.ratingCount,
     required this.ratingsLoading,
     this.ratingsError,
+    required this.avgFeedback,
+    required this.feedbackCount,
+    required this.feedbackLoading,
+    required this.showFeedback,
+    required this.from,
   });
 
   @override
@@ -370,24 +454,22 @@ class _LoungeCard extends StatelessWidget {
           if (ratingsError != null)
             Row(
               children: [
-                const Icon(Icons.error_outline,
-                    size: 13, color: AppColors.red),
+                const Icon(Icons.error_outline, size: 13, color: AppColors.red),
                 const SizedBox(width: 4),
                 Expanded(
-                  child: Text(
-                    ratingsError!,
-                    style: const TextStyle(
-                        color: AppColors.red, fontSize: 11),
-                  ),
+                  child: Text(ratingsError!,
+                      style: const TextStyle(color: AppColors.red, fontSize: 11)),
                 ),
               ],
             )
           else
-            _RatingBadge(
-              avg: avgRating,
-              count: ratingCount,
-              loading: ratingsLoading,
-            ),
+            _RatingBadge(avg: avgRating, count: ratingCount, loading: ratingsLoading),
+          if (showFeedback) ...[
+            const SizedBox(height: 6),
+            _FeedbackBadge(avg: avgFeedback, count: feedbackCount, loading: feedbackLoading),
+          ],
+          const SizedBox(height: 6),
+          _LoungeNotesBadge(lounge: lounge, from: from),
         ],
       ),
     );
@@ -497,14 +579,14 @@ class _RatingBadge extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         Text(
-          '· $count ${_plural(count)}',
+          '· $count ${_pluralRating(count)}',
           style: const TextStyle(color: AppColors.muted, fontSize: 12),
         ),
       ],
     );
   }
 
-  static String _plural(int n) {
+  static String _pluralRating(int n) {
     if (n % 100 >= 11 && n % 100 <= 19) return 'оценок';
     switch (n % 10) {
       case 1:
@@ -515,6 +597,472 @@ class _RatingBadge extends StatelessWidget {
         return 'оценки';
       default:
         return 'оценок';
+    }
+  }
+}
+
+// ── Бейдж обратной связи ──────────────────────────────────────────────────────
+
+class _FeedbackBadge extends StatelessWidget {
+  final double? avg;
+  final int count;
+  final bool loading;
+
+  const _FeedbackBadge({
+    required this.avg,
+    required this.count,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.blue),
+          ),
+          SizedBox(width: 6),
+          Text('Отзывы...',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.chat_bubble_outline_rounded,
+            size: 14, color: AppColors.blue),
+        const SizedBox(width: 4),
+        Text(
+          '$count ${_plural(count)}',
+          style: const TextStyle(
+            color: AppColors.blue,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        if (avg != null) ...[
+          const SizedBox(width: 6),
+          const Icon(Icons.star_rounded, size: 13, color: AppColors.blue),
+          const SizedBox(width: 2),
+          Text(
+            avg!.toStringAsFixed(1),
+            style: const TextStyle(color: AppColors.muted, fontSize: 12),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static String _plural(int n) {
+    if (n % 100 >= 11 && n % 100 <= 19) return 'отзывов';
+    switch (n % 10) {
+      case 1:
+        return 'отзыв';
+      case 2:
+      case 3:
+      case 4:
+        return 'отзыва';
+      default:
+        return 'отзывов';
+    }
+  }
+}
+
+// ── Интерактивный бейдж записок кальянной ────────────────────────────────────
+
+class _LoungeNotesBadge extends ConsumerWidget {
+  final LoungeModel lounge;
+  final DateTime from;
+
+  const _LoungeNotesBadge({required this.lounge, required this.from});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(loungeNotesProvider(lounge.id));
+    if (state.error != null) return const SizedBox.shrink();
+    if (state.isEnabled == false) return const SizedBox.shrink();
+
+    final notesEnabled = state.isEnabled == true;
+    final count = state.loading ? 0 : state.countFrom(from);
+
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: state.loading
+              ? null
+              : () => _showSheet(context, ref),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.sticky_note_2_outlined, size: 14, color: AppColors.muted),
+              const SizedBox(width: 4),
+              state.loading
+                  ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.muted),
+                    )
+                  : Text(
+                      '$count ${_pluralNotes(count)}',
+                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
+                    ),
+            ],
+          ),
+        ),
+        if (notesEnabled) ...[
+          const Spacer(),
+          GestureDetector(
+            onTap: () => _showCreateDialog(context, ref),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.add, size: 13, color: AppColors.gold),
+                  SizedBox(width: 3),
+                  Text('Записка',
+                      style: TextStyle(color: AppColors.gold, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showSheet(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => _DashboardNotesSheet(lounge: lounge, ref: ref),
+    );
+  }
+
+  void _showCreateDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (_) => _DashboardNoteDialog(
+        onSave: (text) =>
+            ref.read(loungeNotesProvider(lounge.id).notifier).createNote(text),
+      ),
+    );
+  }
+
+  static String _pluralNotes(int n) {
+    if (n % 100 >= 11 && n % 100 <= 19) return 'записок';
+    switch (n % 10) {
+      case 1: return 'записка';
+      case 2: case 3: case 4: return 'записки';
+      default: return 'записок';
+    }
+  }
+}
+
+// ── Bottom sheet со списком записок ──────────────────────────────────────────
+
+class _DashboardNotesSheet extends ConsumerWidget {
+  final LoungeModel lounge;
+  final WidgetRef ref;
+
+  const _DashboardNotesSheet({required this.lounge, required this.ref});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(loungeNotesProvider(lounge.id));
+    final notifier = ref.read(loungeNotesProvider(lounge.id).notifier);
+    final notesEnabled = state.isEnabled == true;
+    final df = DateFormat('dd.MM.yy HH:mm');
+
+    return DraggableScrollableSheet(
+      initialChildSize: 0.5,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (_, scrollCtrl) => Column(
+        children: [
+          // ── Хэндл и заголовок ──────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.sticky_note_2_outlined,
+                    size: 16, color: AppColors.gold),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Записки · ${lounge.name}',
+                    style: const TextStyle(
+                      color: AppColors.text,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (notesEnabled)
+                  TextButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      showDialog(
+                        context: context,
+                        builder: (_) => _DashboardNoteDialog(
+                          onSave: (text) => notifier.createNote(text),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.add, size: 16, color: AppColors.gold),
+                    label: const Text('Добавить',
+                        style: TextStyle(color: AppColors.gold, fontSize: 13)),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: AppColors.border),
+
+          // ── Список ──────────────────────────────────────────────────────────
+          Expanded(
+            child: state.loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.gold))
+                : state.items.isEmpty
+                    ? const Center(
+                        child: Text('Записок нет',
+                            style: TextStyle(
+                                color: AppColors.muted, fontSize: 14)))
+                    : ListView.separated(
+                        controller: scrollCtrl,
+                        padding: const EdgeInsets.all(16),
+                        itemCount: state.items.length,
+                        separatorBuilder: (ctx2, i2) =>
+                            const Divider(color: AppColors.border, height: 1),
+                        itemBuilder: (ctx, i) {
+                          final note = state.items[i];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(note.text,
+                                          style: const TextStyle(
+                                              color: AppColors.text,
+                                              fontSize: 13)),
+                                      const SizedBox(height: 4),
+                                      Row(children: [
+                                        if (note.authorName != null) ...[
+                                          Text(note.authorName!,
+                                              style: const TextStyle(
+                                                  color: AppColors.muted,
+                                                  fontSize: 11)),
+                                          const Text(' · ',
+                                              style: TextStyle(
+                                                  color: AppColors.muted,
+                                                  fontSize: 11)),
+                                        ],
+                                        Text(
+                                          df.format(
+                                              note.createdAt.toLocal()),
+                                          style: const TextStyle(
+                                              color: AppColors.muted,
+                                              fontSize: 11),
+                                        ),
+                                      ]),
+                                    ],
+                                  ),
+                                ),
+                                if (notesEnabled)
+                                  GestureDetector(
+                                    onTap: () => _confirmDelete(
+                                        ctx, notifier, note.noteId),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(4),
+                                      child: Icon(Icons.delete_outline,
+                                          size: 18, color: AppColors.muted),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Future<void> _confirmDelete(
+    BuildContext context,
+    LoungeNotesNotifier notifier,
+    String noteId,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Удалить записку?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить',
+                style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final err = await notifier.deleteNote(noteId);
+    if (err != null && context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(err)));
+    }
+  }
+}
+
+// ── Диалог создания записки (дашборд) ─────────────────────────────────────────
+
+class _DashboardNoteDialog extends StatefulWidget {
+  final Future<String?> Function(String text) onSave;
+  const _DashboardNoteDialog({required this.onSave});
+
+  @override
+  State<_DashboardNoteDialog> createState() => _DashboardNoteDialogState();
+}
+
+class _DashboardNoteDialogState extends State<_DashboardNoteDialog> {
+  final _controller = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _saving = true);
+    final err = await widget.onSave(text);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(err)));
+    } else {
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('Оставить записку'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        maxLines: 4,
+        minLines: 2,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(hintText: 'Текст записки...'),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Отмена'),
+        ),
+        TextButton(
+          onPressed: _saving ? null : _save,
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.gold),
+                )
+              : const Text('Сохранить'),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Бейдж записок (сводная карточка) ─────────────────────────────────────────
+
+class _NotesBadge extends StatelessWidget {
+  final int count;
+  final bool loading;
+
+  const _NotesBadge({required this.count, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(
+                strokeWidth: 2, color: AppColors.muted),
+          ),
+          SizedBox(width: 6),
+          Text('Записки...',
+              style: TextStyle(color: AppColors.muted, fontSize: 12)),
+        ],
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.sticky_note_2_outlined,
+            size: 14, color: AppColors.muted),
+        const SizedBox(width: 4),
+        Text(
+          '$count ${_plural(count)}',
+          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  static String _plural(int n) {
+    if (n % 100 >= 11 && n % 100 <= 19) return 'записок';
+    switch (n % 10) {
+      case 1:
+        return 'записка';
+      case 2:
+      case 3:
+      case 4:
+        return 'записки';
+      default:
+        return 'записок';
     }
   }
 }

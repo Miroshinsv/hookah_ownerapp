@@ -17,6 +17,7 @@ import '../../../shared/models/staff_model.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../chat/screens/lounge_chat_screen.dart';
+import '../../notes/providers/notes_enabled_provider.dart';
 import '../../staff/providers/staff_provider.dart';
 import '../../staff/screens/staff_detail_screen.dart';
 import '../../staff/screens/staff_form_screen.dart';
@@ -593,6 +594,11 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
             loading: _loadingRatings,
           ),
           const SizedBox(height: 16),
+
+          // Подписки
+          _SubscriptionsSection(lounge: lounge),
+          const SizedBox(height: 16),
+
           if (hasCoords) ...[
             const Text(
               'Карта',
@@ -879,9 +885,7 @@ class _LoungeDetailScreenState extends ConsumerState<_LoungeDetailScreen> {
           OutlinedButton.icon(
             onPressed: lounge.chatEnabled ? () => _openLoungeChat(lounge) : null,
             icon: const Icon(Icons.chat_bubble_outline, size: 18),
-            label: Text(lounge.chatEnabled
-                ? 'Написать заведению'
-                : 'Написать заведению (не подключено)'),
+            label: const Text('Чат с заведением'),
             style: OutlinedButton.styleFrom(
               foregroundColor:
                   lounge.chatEnabled ? AppColors.gold : AppColors.muted,
@@ -1067,6 +1071,106 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Секция рейтинга кальянной ─────────────────────────────────────────────────
+
+// ── Секция платных подписок (read-only) ──────────────────────────────────────
+
+class _SubscriptionsSection extends ConsumerWidget {
+  final LoungeModel lounge;
+
+  const _SubscriptionsSection({required this.lounge});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notesAsync = ref.watch(isNotesEnabledProvider(lounge.id));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Подписки',
+          style: TextStyle(
+              color: AppColors.text, fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 4),
+        _SubToggleTile(
+          icon: Icons.photo_library_outlined,
+          label: 'Медиа (загрузка фото)',
+          value: lounge.mediaEnabled,
+          loading: false,
+        ),
+        _SubToggleTile(
+          icon: Icons.sticky_note_2_outlined,
+          label: 'Записки',
+          value: notesAsync.valueOrNull ?? false,
+          loading: notesAsync.isLoading,
+        ),
+        _SubToggleTile(
+          icon: Icons.chat_outlined,
+          label: 'Чат с заведением',
+          value: lounge.chatEnabled,
+          loading: false,
+        ),
+        _SubToggleTile(
+          icon: Icons.feedback_outlined,
+          label: 'Обратная связь',
+          value: lounge.feedbackEnabled,
+          loading: false,
+        ),
+      ],
+    );
+  }
+}
+
+class _SubToggleTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool value;
+  final bool loading;
+
+  const _SubToggleTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.loading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+      leading: Icon(
+        icon,
+        size: 18,
+        color: value ? AppColors.gold : AppColors.muted,
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          color: value ? AppColors.text : AppColors.muted,
+          fontSize: 13,
+        ),
+      ),
+      trailing: loading
+          ? const SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.muted),
+            )
+          : Switch(
+              value: value,
+              onChanged: null,
+              activeThumbColor: AppColors.gold,
+              activeTrackColor: AppColors.gold.withValues(alpha: 0.4),
+              inactiveThumbColor: AppColors.muted,
+              inactiveTrackColor: AppColors.border,
+            ),
     );
   }
 }

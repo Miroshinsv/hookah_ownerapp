@@ -16,6 +16,7 @@ class LoungeModel {
   final int mediaMaxFiles;
   final List<LoungePhotoModel> photos;
   final bool chatEnabled;
+  final bool feedbackEnabled;
   final List<StaffModel> staff;
 
   const LoungeModel({
@@ -33,6 +34,7 @@ class LoungeModel {
     this.mediaMaxFiles = 5,
     this.photos = const [],
     this.chatEnabled = false,
+    this.feedbackEnabled = false,
     this.staff = const [],
   });
 
@@ -53,6 +55,7 @@ class LoungeModel {
             .map((p) => LoungePhotoModel.fromJson(p as Map<String, dynamic>))
             .toList(),
         chatEnabled: json['chatEnabled'] as bool? ?? false,
+        feedbackEnabled: json['feedbackEnabled'] as bool? ?? false,
         staff: (json['staff'] as List<dynamic>? ?? [])
             .map((s) => StaffModel.fromJson(s as Map<String, dynamic>))
             .toList(),

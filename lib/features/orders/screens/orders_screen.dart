@@ -13,6 +13,7 @@ import '../../../shared/widgets/status_chip.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../chat/providers/unread_messages_provider.dart';
 import '../../dashboard/providers/dashboard_provider.dart';
+import '../../users/screens/user_screen.dart';
 import '../providers/orders_provider.dart';
 
 class OrdersScreen extends ConsumerStatefulWidget {
@@ -201,6 +202,24 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
           children: [
             Row(
               children: [
+                if (order.userId != null || order.firstName != null || order.lastName != null) ...[
+                  UserAvatar(
+                    userId: order.userId,
+                    firstName: order.firstName,
+                    lastName: order.lastName,
+                    radius: 16,
+                    onTap: order.userId != null
+                        ? () => context.push(
+                              '/user/${Uri.encodeComponent(order.userId!)}',
+                              extra: {
+                                'firstName': order.firstName,
+                                'lastName': order.lastName,
+                              },
+                            )
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 if (isNew)
                   const Padding(
                     padding: EdgeInsets.only(right: 6),
@@ -235,7 +254,7 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
                 ),
             ],
             if (order.arrivalAt != null)
-              _Row(icon: Icons.event, text: 'Приход: ${order.arrivalAt}'),
+              _Row(icon: Icons.event, text: 'Прибытие: ${_formatArrival(order.arrivalAt!)}'),
             if (order.comment != null)
               _Row(
                 icon: Icons.comment_outlined,
@@ -310,6 +329,12 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
         OrderStatus.canceledByStaff => AppColors.red,
         OrderStatus.canceledByUser => AppColors.muted,
       };
+}
+
+String _formatArrival(String raw) {
+  final dt = DateTime.tryParse(raw);
+  if (dt == null) return raw;
+  return DateFormat('dd.MM.yyyy HH:mm').format(dt.toLocal());
 }
 
 class _Row extends StatelessWidget {

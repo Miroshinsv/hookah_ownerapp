@@ -57,6 +57,7 @@ query Lounges {
     mediaEnabled
     mediaMaxFiles
     chatEnabled
+    feedbackEnabled
     photos {
       id
       url
@@ -425,6 +426,79 @@ query RatingStats($targetType: String!, $targetId: String!) {
   ratingStats(targetType: $targetType, targetId: $targetId) {
     avgRating
     count
+  }
+}
+''';
+
+const kLoungeFeedbacksQuery = r'''
+query LoungeFeedbacks($loungeId: String!, $limit: Int) {
+  loungeFeedbacks(loungeId: $loungeId, limit: $limit) {
+    feedbackId
+    score
+    createdAt
+  }
+}
+''';
+
+const kIsNotesEnabledQuery = r'''
+query IsNotesEnabled($loungeId: String!) {
+  isNotesEnabled(loungeId: $loungeId)
+}
+''';
+
+const kCreateNoteMutation = r'''
+mutation CreateNote($loungeId: String!, $entityType: String!, $entityId: String!, $text: String!) {
+  createNote(loungeId: $loungeId, entityType: $entityType, entityId: $entityId, text: $text) {
+    noteId
+    authorName
+    text
+    createdAt
+  }
+}
+''';
+
+const kDeleteNoteMutation = r'''
+mutation DeleteNote($noteId: String!, $loungeId: String!) {
+  deleteNote(noteId: $noteId, loungeId: $loungeId)
+}
+''';
+
+const kLoungeEntityNotesQuery = r'''
+query LoungeEntityNotes($loungeId: String!, $limit: Int) {
+  notes(loungeId: $loungeId, entityType: "lounge", entityId: $loungeId, limit: $limit) {
+    items {
+      noteId
+      authorName
+      text
+      createdAt
+    }
+    total
+  }
+}
+''';
+
+const kUserNotesQuery = r'''
+query UserNotes($loungeId: String!, $userId: String!, $limit: Int) {
+  notes(loungeId: $loungeId, entityType: "user", entityId: $userId, limit: $limit) {
+    items {
+      noteId
+      authorName
+      text
+      createdAt
+    }
+    total
+  }
+}
+''';
+
+const kLoungeNotesQuery = r'''
+query LoungeNotes($loungeId: String!, $limit: Int) {
+  notes(loungeId: $loungeId, limit: $limit) {
+    items {
+      noteId
+      createdAt
+    }
+    total
   }
 }
 ''';
