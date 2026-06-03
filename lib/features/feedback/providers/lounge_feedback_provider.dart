@@ -39,17 +39,21 @@ class LoungeFeedbackState {
 
 // ── Нотификатор ───────────────────────────────────────────────────────────────
 
-class LoungeFeedbackNotifier extends StateNotifier<LoungeFeedbackState> {
-  final GraphQLClient _client;
+class LoungeFeedbackNotifier extends Notifier<LoungeFeedbackState> {
   final String _loungeId;
+  late GraphQLClient _client;
 
-  LoungeFeedbackNotifier(this._client, this._loungeId)
-      : super(const LoungeFeedbackState(loading: true)) {
-    fetch();
+  LoungeFeedbackNotifier(this._loungeId);
+
+  @override
+  LoungeFeedbackState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const LoungeFeedbackState(loading: true);
   }
 
   Future<void> fetch() async {
-    if (!mounted) return;
+    if (!ref.mounted) return;
     state = const LoungeFeedbackState(loading: true);
     try {
       final result = await _client.query(QueryOptions(
@@ -57,7 +61,7 @@ class LoungeFeedbackNotifier extends StateNotifier<LoungeFeedbackState> {
         variables: {'loungeId': _loungeId, 'limit': 200},
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (!mounted) return;
+      if (!ref.mounted) return;
       if (result.hasException) throw result.exception!;
 
       final raw =
@@ -72,7 +76,7 @@ class LoungeFeedbackNotifier extends StateNotifier<LoungeFeedbackState> {
 
       state = LoungeFeedbackState(items: items);
     } catch (e) {
-      if (!mounted) return;
+      if (!ref.mounted) return;
       state = LoungeFeedbackState(error: e.toString());
     }
   }
@@ -80,10 +84,7 @@ class LoungeFeedbackNotifier extends StateNotifier<LoungeFeedbackState> {
 
 // ── Family-провайдер: один экземпляр на loungeId ──────────────────────────────
 
-final loungeFeedbackProvider = StateNotifierProvider.autoDispose
+final loungeFeedbackProvider = NotifierProvider.autoDispose
     .family<LoungeFeedbackNotifier, LoungeFeedbackState, String>(
-  (ref, loungeId) {
-    final client = ref.watch(graphqlClientProvider);
-    return LoungeFeedbackNotifier(client, loungeId);
-  },
+  (loungeId) => LoungeFeedbackNotifier(loungeId),
 );

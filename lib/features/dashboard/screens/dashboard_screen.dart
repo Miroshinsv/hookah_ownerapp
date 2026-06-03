@@ -617,60 +617,54 @@ class _FeedbackBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Row(
-        children: [
-          SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.blue),
-          ),
-          SizedBox(width: 6),
-          Text('Отзывы...',
-              style: TextStyle(color: AppColors.muted, fontSize: 12)),
-        ],
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.blue.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.blue.withValues(alpha: 0.2)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: 12, height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue)),
+            SizedBox(width: 6),
+            Text('Отзывы...', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          ],
+        ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.chat_bubble_outline_rounded,
-            size: 14, color: AppColors.blue),
-        const SizedBox(width: 4),
-        Text(
-          '$count ${_plural(count)}',
-          style: const TextStyle(
-            color: AppColors.blue,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        if (avg != null) ...[
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.blue.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.blue.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.feedback_outlined, size: 14, color: AppColors.blue),
           const SizedBox(width: 6),
-          const Icon(Icons.star_rounded, size: 13, color: AppColors.blue),
-          const SizedBox(width: 2),
-          Text(
-            avg!.toStringAsFixed(1),
-            style: const TextStyle(color: AppColors.muted, fontSize: 12),
-          ),
+          const Text('Отзывы',
+              style: TextStyle(
+                  color: AppColors.blue, fontSize: 12, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 6),
+          Text('$count',
+              style: const TextStyle(
+                  color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w700)),
+          if (avg != null) ...[
+            const SizedBox(width: 4),
+            const Icon(Icons.star_rounded, size: 13, color: AppColors.gold),
+            const SizedBox(width: 2),
+            Text(avg!.toStringAsFixed(1),
+                style: const TextStyle(color: AppColors.muted, fontSize: 12)),
+          ],
         ],
-      ],
+      ),
     );
-  }
-
-  static String _plural(int n) {
-    if (n % 100 >= 11 && n % 100 <= 19) return 'отзывов';
-    switch (n % 10) {
-      case 1:
-        return 'отзыв';
-      case 2:
-      case 3:
-      case 4:
-        return 'отзыва';
-      default:
-        return 'отзывов';
-    }
   }
 }
 
@@ -694,46 +688,58 @@ class _LoungeNotesBadge extends ConsumerWidget {
     return Row(
       children: [
         GestureDetector(
-          onTap: state.loading
-              ? null
-              : () => _showSheet(context, ref),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.sticky_note_2_outlined, size: 14, color: AppColors.muted),
-              const SizedBox(width: 4),
-              state.loading
-                  ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: AppColors.muted),
-                    )
-                  : Text(
-                      '$count ${_pluralNotes(count)}',
-                      style: const TextStyle(color: AppColors.muted, fontSize: 12),
-                    ),
-            ],
+          onTap: state.loading ? null : () => _showSheet(context, ref),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.gold.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.sticky_note_2_outlined, size: 14, color: AppColors.gold),
+                const SizedBox(width: 6),
+                const Text('Записки',
+                    style: TextStyle(
+                        color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600)),
+                const SizedBox(width: 6),
+                state.loading
+                    ? const SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.gold))
+                    : Text('$count',
+                        style: const TextStyle(
+                            color: AppColors.text,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700)),
+              ],
+            ),
           ),
         ),
         if (notesEnabled) ...[
-          const Spacer(),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: () => _showCreateDialog(context, ref),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: AppColors.gold.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+                color: AppColors.gold.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
               ),
               child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.add, size: 13, color: AppColors.gold),
-                  SizedBox(width: 3),
-                  Text('Записка',
-                      style: TextStyle(color: AppColors.gold, fontSize: 11)),
+                  Icon(Icons.add, size: 14, color: AppColors.gold),
+                  SizedBox(width: 4),
+                  Text('Записать',
+                      style: TextStyle(
+                          color: AppColors.gold,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -1023,46 +1029,46 @@ class _NotesBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Row(
-        children: [
-          SizedBox(
-            width: 12,
-            height: 12,
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.muted),
-          ),
-          SizedBox(width: 6),
-          Text('Записки...',
-              style: TextStyle(color: AppColors.muted, fontSize: 12)),
-        ],
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.gold.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.gold.withValues(alpha: 0.2)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(width: 12, height: 12,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.gold)),
+            SizedBox(width: 6),
+            Text('Записки...', style: TextStyle(color: AppColors.muted, fontSize: 12)),
+          ],
+        ),
       );
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.sticky_note_2_outlined,
-            size: 14, color: AppColors.muted),
-        const SizedBox(width: 4),
-        Text(
-          '$count ${_plural(count)}',
-          style: const TextStyle(color: AppColors.muted, fontSize: 12),
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.gold.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.gold.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.sticky_note_2_outlined, size: 14, color: AppColors.gold),
+          const SizedBox(width: 6),
+          const Text('Записки',
+              style: TextStyle(
+                  color: AppColors.gold, fontSize: 12, fontWeight: FontWeight.w600)),
+          const SizedBox(width: 6),
+          Text('$count',
+              style: const TextStyle(
+                  color: AppColors.text, fontSize: 14, fontWeight: FontWeight.w700)),
+        ],
+      ),
     );
-  }
-
-  static String _plural(int n) {
-    if (n % 100 >= 11 && n % 100 <= 19) return 'записок';
-    switch (n % 10) {
-      case 1:
-        return 'записка';
-      case 2:
-      case 3:
-      case 4:
-        return 'записки';
-      default:
-        return 'записок';
-    }
   }
 }

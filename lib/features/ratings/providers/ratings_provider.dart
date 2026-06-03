@@ -53,7 +53,7 @@ class LoungeRatingsNotifier extends Notifier<LoungeRatingsState> {
   }
 
   Future<void> fetch() async {
-    if (!mounted) return;
+    if (!ref.mounted) return;
     state = const LoungeRatingsState(loading: true);
     try {
       final result = await _client.query(QueryOptions(
@@ -80,7 +80,7 @@ class LoungeRatingsNotifier extends Notifier<LoungeRatingsState> {
 
       state = LoungeRatingsState(items: items);
     } catch (e) {
-      if (!mounted) return;
+      if (!ref.mounted) return;
       state = LoungeRatingsState(error: e.toString());
     }
   }

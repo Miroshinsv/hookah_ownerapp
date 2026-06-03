@@ -1106,7 +1106,7 @@ class _SubscriptionsSection extends ConsumerWidget {
         _SubToggleTile(
           icon: Icons.sticky_note_2_outlined,
           label: 'Записки',
-          value: notesAsync.valueOrNull ?? false,
+          value: notesAsync.asData?.value ?? false,
           loading: notesAsync.isLoading,
         ),
         _SubToggleTile(

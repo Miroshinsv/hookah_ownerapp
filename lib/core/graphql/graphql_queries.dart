@@ -502,3 +502,18 @@ query LoungeNotes($loungeId: String!, $limit: Int) {
   }
 }
 ''';
+
+const kRequestFeedbackMutation = r'''
+mutation RequestOrderFeedback($orderId: String!) {
+  requestOrderFeedback(orderId: $orderId)
+}
+''';
+
+const kFeedbackRequestQuery = r'''
+query FeedbackRequest($orderId: String!) {
+  feedbackRequest(orderId: $orderId) {
+    status
+  }
+}
+''';
+

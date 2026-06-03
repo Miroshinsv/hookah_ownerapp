@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import 'package:graphql_flutter/graphql_flutter.dart';
+
 import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/order_model.dart';
@@ -130,8 +132,68 @@ class _OrderCard extends ConsumerStatefulWidget {
   ConsumerState<_OrderCard> createState() => _OrderCardState();
 }
 
+// Feedback request status: null=not loaded, 'none'=no request, 'new'=pending,
+// 'answered'=done, 'canceled'=declined by user.
 class _OrderCardState extends ConsumerState<_OrderCard> {
   String? _actionLoading;
+  String? _feedbackStatus; // null | 'none' | 'new' | 'answered' | 'canceled'
+  bool _feedbackLoading = false;
+
+  bool get _isCompleted =>
+      widget.order.status != OrderStatus.newOrder &&
+      widget.order.status != OrderStatus.inProgress;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isCompleted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadFeedbackStatus());
+    }
+  }
+
+  Future<void> _loadFeedbackStatus() async {
+    if (!mounted) return;
+    final client = ref.read(graphqlClientProvider);
+    try {
+      final result = await client.query(QueryOptions(
+        document: gql(kFeedbackRequestQuery),
+        variables: {'orderId': widget.order.id},
+        fetchPolicy: FetchPolicy.networkOnly,
+      ));
+      if (!mounted) return;
+      final data = result.data?['feedbackRequest'] as Map<String, dynamic>?;
+      setState(() {
+        _feedbackStatus = data != null ? (data['status'] as String?) ?? 'new' : 'none';
+      });
+    } catch (_) {
+      if (mounted) setState(() => _feedbackStatus = 'none');
+    }
+  }
+
+  Future<void> _requestFeedback() async {
+    if (!mounted) return;
+    setState(() => _feedbackLoading = true);
+    final client = ref.read(graphqlClientProvider);
+    try {
+      final result = await client.mutate(MutationOptions(
+        document: gql(kRequestFeedbackMutation),
+        variables: {'orderId': widget.order.id},
+      ));
+      if (!mounted) return;
+      if (result.hasException) {
+        final msg = result.exception?.graphqlErrors.firstOrNull?.message ?? 'Ошибка';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      } else {
+        setState(() => _feedbackStatus = 'new');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => _feedbackLoading = false);
+    }
+  }
 
   Future<void> _changeStatus(OrderStatus status) async {
     setState(() => _actionLoading = status.apiValue);
@@ -279,6 +341,7 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
                     loading: _actionLoading == 'delete',
                     onTap: _delete,
                   ),
+                if (_isCompleted) _buildFeedbackChip(),
                 Stack(
                   children: [
                     _ActionChip(
@@ -313,6 +376,36 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
         ),
       ),
     );
+  }
+
+  Widget _buildFeedbackChip() {
+    switch (_feedbackStatus) {
+      case null:
+        // Still loading — show nothing yet
+        return const SizedBox.shrink();
+      case 'answered':
+        return _ActionChip(
+          label: 'Отзыв получен',
+          color: AppColors.green,
+          loading: false,
+          onTap: () {},
+        );
+      case 'new':
+        return _ActionChip(
+          label: 'Ожидает ответа',
+          color: AppColors.muted,
+          loading: false,
+          onTap: () {},
+        );
+      default:
+        // 'none' or 'canceled' — can request (or re-request)
+        return _ActionChip(
+          label: 'Запросить отзыв',
+          color: AppColors.gold,
+          loading: _feedbackLoading,
+          onTap: _requestFeedback,
+        );
+    }
   }
 
   String _statusActionLabel(OrderStatus s) => switch (s) {

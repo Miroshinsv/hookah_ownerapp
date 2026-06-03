@@ -233,22 +233,6 @@ Future<void> _checkNewOrders(
     } else {
       _stopAlarm();
     }
-
-    // Update foreground notification with last-check timestamp so the user
-    // (and developer) can verify the service is actively polling.
-    final now = DateTime.now();
-    final ts = '${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}:'
-        '${now.second.toString().padLeft(2, '0')}';
-    final content = newOrders.isEmpty
-        ? 'Проверено в $ts · новых заказов нет'
-        : 'Проверено в $ts · новых: ${newOrders.length}';
-    if (service is AndroidServiceInstance) {
-      service.setForegroundNotificationInfo(
-        title: 'Hookah Admin',
-        content: content,
-      );
-    }
   } catch (e) {
     debugPrint('BackgroundService._checkNewOrders: $e');
   }

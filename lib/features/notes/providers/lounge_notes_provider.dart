@@ -28,17 +28,21 @@ class LoungeNotesState {
 
 // ── Нотификатор ───────────────────────────────────────────────────────────────
 
-class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
-  final GraphQLClient _client;
+class LoungeNotesNotifier extends Notifier<LoungeNotesState> {
   final String _loungeId;
+  late GraphQLClient _client;
 
-  LoungeNotesNotifier(this._client, this._loungeId)
-      : super(const LoungeNotesState(loading: true)) {
-    fetch();
+  LoungeNotesNotifier(this._loungeId);
+
+  @override
+  LoungeNotesState build() {
+    _client = ref.watch(graphqlClientProvider);
+    Future.microtask(fetch);
+    return const LoungeNotesState(loading: true);
   }
 
   Future<void> fetch() async {
-    if (!mounted) return;
+    if (!ref.mounted) return;
     state = const LoungeNotesState(loading: true);
     try {
       // Сначала проверяем, включён ли сервис записок
@@ -47,7 +51,7 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
         variables: {'loungeId': _loungeId},
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (!mounted) return;
+      if (!ref.mounted) return;
       if (enabledResult.hasException) throw enabledResult.exception!;
 
       final isEnabled =
@@ -64,7 +68,7 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
         variables: {'loungeId': _loungeId, 'limit': 200},
         fetchPolicy: FetchPolicy.networkOnly,
       ));
-      if (!mounted) return;
+      if (!ref.mounted) return;
       if (result.hasException) throw result.exception!;
 
       final data = result.data?['notes'] as Map<String, dynamic>?;
@@ -72,7 +76,7 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
       final items = raw.map(_parseNote).toList();
       state = LoungeNotesState(items: items, isEnabled: true);
     } catch (e) {
-      if (!mounted) return;
+      if (!ref.mounted) return;
       state = LoungeNotesState(error: e.toString());
     }
   }
@@ -92,7 +96,7 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
         return result.exception?.graphqlErrors.firstOrNull?.message ?? 'Ошибка';
       }
       final raw = result.data?['createNote'] as Map<String, dynamic>?;
-      if (raw != null && mounted) {
+      if (raw != null && ref.mounted) {
         state = LoungeNotesState(
           items: [_parseNote(raw), ...state.items],
           isEnabled: true,
@@ -113,7 +117,7 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
       if (result.hasException) {
         return result.exception?.graphqlErrors.firstOrNull?.message ?? 'Ошибка';
       }
-      if (mounted) {
+      if (ref.mounted) {
         state = LoungeNotesState(
           items: state.items.where((n) => n.noteId != noteId).toList(),
           isEnabled: true,
@@ -131,17 +135,16 @@ class LoungeNotesNotifier extends StateNotifier<LoungeNotesState> {
       noteId: m['noteId'] as String,
       authorName: m['authorName'] as String?,
       text: m['text'] as String,
-      createdAt: DateTime.parse(m['createdAt'] as String),
+      createdAt: m['createdAt'] != null
+          ? DateTime.parse(m['createdAt'] as String)
+          : DateTime.now(),
     );
   }
 }
 
 // ── Family-провайдер: один экземпляр на loungeId ──────────────────────────────
 
-final loungeNotesProvider = StateNotifierProvider.autoDispose
+final loungeNotesProvider = NotifierProvider.autoDispose
     .family<LoungeNotesNotifier, LoungeNotesState, String>(
-  (ref, loungeId) {
-    final client = ref.watch(graphqlClientProvider);
-    return LoungeNotesNotifier(client, loungeId);
-  },
+  (loungeId) => LoungeNotesNotifier(loungeId),
 );

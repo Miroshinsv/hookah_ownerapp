@@ -176,10 +176,20 @@ class _LoungeNotesSection extends ConsumerWidget {
                   const Icon(Icons.storefront_outlined, size: 13, color: AppColors.muted),
                   const SizedBox(width: 5),
                   Expanded(
-                    child: Text(
-                      lounge.name,
-                      style: const TextStyle(
-                          color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w500),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          lounge.name,
+                          style: const TextStyle(
+                              color: AppColors.muted, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        if (lounge.shortAddress != null && lounge.shortAddress!.isNotEmpty)
+                          Text(
+                            lounge.shortAddress!,
+                            style: const TextStyle(color: AppColors.muted, fontSize: 11),
+                          ),
+                      ],
                     ),
                   ),
                   if (notesEnabled)
