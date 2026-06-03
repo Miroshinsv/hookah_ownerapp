@@ -17,9 +17,10 @@ class AuthState {
   bool get isAuthenticated => token != null && token!.isNotEmpty;
   bool get isAdmin => role == 'admin';
   bool get isOwner => role == 'owner';
+  bool get isDeputy => role == 'deputy';
   bool get isStaff => role == 'staff';
-  bool get canManageLounges => isAdmin || isOwner;
-  bool get canManageStaff => isAdmin || isOwner;
+  bool get canManageLounges => isAdmin || isOwner || isDeputy;
+  bool get canManageStaff => isAdmin || isOwner || isDeputy;
   bool get canDeleteOrders => isAdmin;
 
   AuthState copyWith({

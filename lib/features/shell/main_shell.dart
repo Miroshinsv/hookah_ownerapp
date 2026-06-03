@@ -104,10 +104,13 @@ class _MainShellState extends ConsumerState<MainShell>
         : 0;
 
     final tabs = [
-      // Дашборд — только для владельца и администратора
+      // Дашборд — для владельца, заместителя и администратора
       if (!auth.isStaff)
         _Tab('/dashboard', Icons.dashboard_outlined, Icons.dashboard, 'Дашборд'),
       _Tab('/orders', Icons.receipt_long_outlined, Icons.receipt_long, 'Заказы'),
+      // Отзывы — для владельца, заместителя и администратора
+      if (!auth.isStaff)
+        _Tab('/reviews', Icons.rate_review_outlined, Icons.rate_review, 'Отзывы'),
       if (auth.canManageLounges)
         _Tab('/lounges', Icons.storefront_outlined, Icons.storefront, 'Кальянные'),
     ];
@@ -178,6 +181,7 @@ class _UserHeader extends StatelessWidget {
     final roleLabel = switch (role) {
       'admin' => 'Администратор',
       'owner' => 'Владелец',
+      'deputy' => 'Заместитель',
       'staff' => 'Персонал',
       _ => role,
     };

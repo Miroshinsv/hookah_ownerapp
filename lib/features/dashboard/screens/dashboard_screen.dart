@@ -73,9 +73,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final loungesState = ref.watch(loungesProvider);
     final wsClient = ref.watch(wsClientProvider);
 
-    final myLounges = loungesState.lounges
-        .where((l) => auth.isAdmin || l.ownerUserId == auth.userId)
-        .toList();
+    final myLounges = loungesState.lounges.where((l) {
+      if (auth.isAdmin) return true;
+      if (l.ownerUserId == auth.userId) return true;
+      if (auth.isDeputy && l.id == auth.loungeId) return true;
+      return false;
+    }).toList();
 
     final ratingsByLounge = {
       for (final l in myLounges)

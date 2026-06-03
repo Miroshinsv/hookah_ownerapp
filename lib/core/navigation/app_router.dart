@@ -8,6 +8,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/chat/screens/chat_screen.dart';
 import '../../features/chat/screens/lounge_chat_screen.dart';
 import '../../features/dashboard/screens/dashboard_screen.dart';
+import '../../features/feedback/screens/reviews_screen.dart';
 import '../../features/lounges/screens/lounge_form_screen.dart';
 import '../../features/lounges/screens/lounges_screen.dart';
 import '../../features/orders/screens/orders_screen.dart';
@@ -31,8 +32,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         // Персонал видит только заказы, остальные — дашборд
         return auth.isStaff ? '/orders' : '/dashboard';
       }
-      // Персонал не имеет доступа к дашборду
+      // Персонал не имеет доступа к дашборду и отзывам
       if (auth.isStaff && state.matchedLocation == '/dashboard') return '/orders';
+      if (auth.isStaff && state.matchedLocation == '/reviews') return '/orders';
       return null;
     },
     routes: [
@@ -53,6 +55,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/orders',
             builder: (ctx, _) => const OrdersScreen(),
+          ),
+          GoRoute(
+            path: '/reviews',
+            builder: (ctx, _) => const ReviewsScreen(),
           ),
           GoRoute(
             path: '/lounges',
