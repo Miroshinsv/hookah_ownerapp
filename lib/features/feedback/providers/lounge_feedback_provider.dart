@@ -9,7 +9,17 @@ import '../../auth/providers/auth_provider.dart';
 class FeedbackEntry {
   final double score;
   final DateTime createdAt;
-  const FeedbackEntry({required this.score, required this.createdAt});
+  final String? userId;
+  final String? orderId;
+  final String? comment;
+
+  const FeedbackEntry({
+    required this.score,
+    required this.createdAt,
+    this.userId,
+    this.orderId,
+    this.comment,
+  });
 }
 
 // ── Стейт ─────────────────────────────────────────────────────────────────────
@@ -71,6 +81,9 @@ class LoungeFeedbackNotifier extends Notifier<LoungeFeedbackState> {
         return FeedbackEntry(
           score: (map['score'] as num).toDouble(),
           createdAt: DateTime.parse(map['createdAt'] as String),
+          userId: map['userId'] as String?,
+          orderId: map['orderId'] as String?,
+          comment: map['comment'] as String?,
         );
       }).toList();
 

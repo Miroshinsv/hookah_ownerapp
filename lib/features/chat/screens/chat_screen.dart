@@ -8,6 +8,7 @@ import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/message_model.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../orders/providers/orders_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/unread_messages_provider.dart';
 
@@ -128,6 +129,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final auth = ref.watch(authProvider);
     final myUserId = auth.userId;
 
+    final order = ref
+        .watch(ordersProvider)
+        .orders
+        .where((o) => o.id == widget.orderId)
+        .firstOrNull;
+    final visitorName = [order?.firstName, order?.lastName]
+        .where((v) => v != null && v.isNotEmpty)
+        .join(' ');
+
     // Auto-scroll and mark read when new messages arrive (subscription or poll).
     ref.listen(chatProviderFamily(widget.orderId), (prev, next) {
       final prevLast = prev?.messages.lastOrNull?.id;
@@ -212,6 +222,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                           return _MessageBubble(
                             message: msg,
                             isMine: isMine,
+                            visitorName: visitorName,
                           );
                         },
                       ),
@@ -231,13 +242,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 class _MessageBubble extends StatelessWidget {
   final MessageModel message;
   final bool isMine;
+  final String visitorName;
 
-  const _MessageBubble({required this.message, required this.isMine});
+  const _MessageBubble({
+    required this.message,
+    required this.isMine,
+    this.visitorName = '',
+  });
+
+  static const _staffRoles = {
+    'admin', 'owner', 'hookah_master', 'hostess', 'waiter', 'staff',
+  };
 
   @override
   Widget build(BuildContext context) {
     final df = DateFormat('HH:mm');
-    final roleLabel = _roleLabel(message.senderRole);
+    final isClient = message.senderRole == null ||
+        !_staffRoles.contains(message.senderRole);
+    final senderLabel = isClient
+        ? (visitorName.isNotEmpty ? visitorName : 'Посетитель')
+        : _roleLabel(message.senderRole);
 
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
@@ -267,9 +291,9 @@ class _MessageBubble extends StatelessWidget {
           crossAxisAlignment:
               isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            if (roleLabel != null)
+            if (senderLabel != null)
               Text(
-                roleLabel,
+                senderLabel,
                 style: TextStyle(
                   color: isMine ? AppColors.gold : AppColors.muted,
                   fontSize: 11,

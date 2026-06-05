@@ -2,14 +2,125 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_chat_message_model.dart';
+import '../../../shared/models/lounge_model.dart';
 import '../../auth/providers/auth_provider.dart';
+import '../../lounges/providers/lounges_provider.dart';
 import '../providers/lounge_chat_provider.dart';
 import '../providers/lounge_unread_provider.dart';
+
+/// Обёртка для кальянного мастера — поддерживает одно или несколько заведений.
+class StaffLoungeChatScreen extends ConsumerWidget {
+  const StaffLoungeChatScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authProvider);
+    final loungesState = ref.watch(loungesProvider);
+
+    // Заведения, в которых сотрудник состоит в штате и у которых включён чат.
+    final myLounges = loungesState.lounges
+        .where((l) =>
+            l.chatEnabled &&
+            l.staff.any((s) => s.userId == auth.userId))
+        .toList();
+
+    if (loungesState.loading && myLounges.isEmpty) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppColors.gold)),
+      );
+    }
+
+    if (myLounges.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Чат с заведением недоступен',
+              style: TextStyle(color: AppColors.muted)),
+        ),
+      );
+    }
+
+    // Одно заведение — сразу открываем чат.
+    if (myLounges.length == 1) {
+      final lounge = myLounges.first;
+      return LoungeChatScreen(
+        key: ValueKey(lounge.id),
+        loungeId: lounge.id,
+        loungeName: lounge.name,
+      );
+    }
+
+    // Несколько заведений — показываем список для выбора.
+    return _StaffLoungeChatSelector(lounges: myLounges);
+  }
+}
+
+class _StaffLoungeChatSelector extends ConsumerWidget {
+  final List<LoungeModel> lounges;
+  const _StaffLoungeChatSelector({required this.lounges});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unread = ref.watch(loungeUnreadProvider);
+    return Scaffold(
+      body: ListView.builder(
+        padding: const EdgeInsets.all(12),
+        itemCount: lounges.length,
+        itemBuilder: (_, i) {
+          final l = lounges[i];
+          return _LoungeChatTile(lounge: l, hasUnread: unread.contains(l.id));
+        },
+      ),
+    );
+  }
+}
+
+class _LoungeChatTile extends StatelessWidget {
+  final LoungeModel lounge;
+  final bool hasUnread;
+  const _LoungeChatTile({required this.lounge, required this.hasUnread});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasUnread ? AppColors.gold : AppColors.border,
+          width: hasUnread ? 1.5 : 1,
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: Badge(
+          isLabelVisible: hasUnread,
+          backgroundColor: AppColors.red,
+          child: const Icon(Icons.chat_bubble_outline, color: AppColors.gold),
+        ),
+        title: Text(
+          lounge.name,
+          style: const TextStyle(
+              color: AppColors.text, fontWeight: FontWeight.w600),
+        ),
+        subtitle: lounge.shortAddress != null
+            ? Text(lounge.shortAddress!,
+                style:
+                    const TextStyle(color: AppColors.muted, fontSize: 12))
+            : null,
+        trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
+        onTap: () => context.push(
+            '/lounge-chat/${lounge.id}?name=${Uri.encodeComponent(lounge.name)}'),
+      ),
+    );
+  }
+}
 
 class LoungeChatScreen extends ConsumerStatefulWidget {
   final String loungeId;

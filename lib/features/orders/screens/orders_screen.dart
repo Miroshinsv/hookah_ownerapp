@@ -342,33 +342,20 @@ class _OrderCardState extends ConsumerState<_OrderCard> {
                     onTap: _delete,
                   ),
                 if (_isCompleted) _buildFeedbackChip(),
-                Stack(
-                  children: [
-                    _ActionChip(
-                      label: 'Чат',
-                      color: AppColors.gold,
-                      loading: false,
-                      onTap: () {
-                        ref
-                            .read(unreadMessagesProvider.notifier)
-                            .markRead(order.id);
-                        context.push('/chat/${order.id}');
-                      },
-                    ),
-                    if (unread)
-                      Positioned(
-                        right: 0,
-                        top: 0,
-                        child: Container(
-                          width: 8,
-                          height: 8,
-                          decoration: const BoxDecoration(
-                            color: AppColors.red,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                  ],
+                Badge(
+                  isLabelVisible: unread,
+                  backgroundColor: AppColors.red,
+                  child: _ActionChip(
+                    label: 'Чат',
+                    color: unread ? AppColors.red : AppColors.gold,
+                    loading: false,
+                    onTap: () {
+                      ref
+                          .read(unreadMessagesProvider.notifier)
+                          .markRead(order.id);
+                      context.push('/chat/${order.id}');
+                    },
+                  ),
                 ),
               ],
             ),

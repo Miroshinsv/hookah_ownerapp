@@ -71,6 +71,22 @@ class _MainShellState extends ConsumerState<MainShell>
     final orderId = await NotificationService.getPendingChatOpen();
     if (orderId != null && mounted) {
       context.push('/chat/$orderId');
+      return;
+    }
+    final loungeId = await NotificationService.getPendingLoungeChatOpen();
+    if (loungeId != null && mounted) {
+      if (ref.read(authProvider).isStaff) {
+        context.go('/staff-chat');
+      } else {
+        final lounge = ref
+            .read(loungesProvider)
+            .lounges
+            .where((l) => l.id == loungeId)
+            .firstOrNull;
+        final name = lounge?.name ?? '';
+        context.push(
+            '/lounge-chat/$loungeId?name=${Uri.encodeComponent(name)}');
+      }
     }
   }
 
@@ -80,6 +96,10 @@ class _MainShellState extends ConsumerState<MainShell>
 
   void _openLoungeChat(String loungeId) {
     if (!mounted) return;
+    if (ref.read(authProvider).isStaff) {
+      context.go('/staff-chat');
+      return;
+    }
     final lounge = ref
         .read(loungesProvider)
         .lounges
@@ -97,9 +117,10 @@ class _MainShellState extends ConsumerState<MainShell>
     // WS subscriptions never stop between tab switches.
     if (!auth.isStaff) ref.watch(dashboardProvider);
     ref.watch(ordersProvider);
-    if (auth.canManageLounges) ref.watch(loungesProvider);
+    // Staff needs loungesProvider to resolve lounge name and subscribe to lounge chat WS.
+    if (auth.canManageLounges || auth.isStaff) ref.watch(loungesProvider);
     final unreadCount = ref.watch(unreadMessagesProvider).length;
-    final loungeUnreadCount = auth.canManageLounges
+    final loungeUnreadCount = (auth.canManageLounges || auth.isStaff)
         ? ref.watch(loungeUnreadProvider).length
         : 0;
 
@@ -110,9 +131,12 @@ class _MainShellState extends ConsumerState<MainShell>
       _Tab('/orders', Icons.receipt_long_outlined, Icons.receipt_long, 'Заказы'),
       // Отзывы — для владельца, заместителя и администратора
       if (!auth.isStaff)
-        _Tab('/reviews', Icons.rate_review_outlined, Icons.rate_review, 'Отзывы'),
+        _Tab('/reviews', Icons.rate_review_outlined, Icons.rate_review, 'Обратная связь'),
       if (auth.canManageLounges)
         _Tab('/lounges', Icons.storefront_outlined, Icons.storefront, 'Кальянные'),
+      // Чат с заведением — только для кальянного мастера/персонала
+      if (auth.isStaff && auth.loungeId != null)
+        _Tab('/staff-chat', Icons.chat_bubble_outline, Icons.chat_bubble, 'Чат'),
     ];
 
     final currentIndex =
@@ -133,7 +157,7 @@ class _MainShellState extends ConsumerState<MainShell>
           Expanded(child: widget.child),
         ],
       ),
-      bottomNavigationBar: Container(
+      bottomNavigationBar: tabs.length < 2 ? null : Container(
         decoration: const BoxDecoration(
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
@@ -143,7 +167,8 @@ class _MainShellState extends ConsumerState<MainShell>
           items: tabs.map((t) {
             final ordBadge = t.path == '/orders' && unreadCount > 0;
             final loungeBadge =
-                t.path == '/lounges' && loungeUnreadCount > 0;
+                (t.path == '/lounges' || t.path == '/staff-chat') &&
+                loungeUnreadCount > 0;
             final badgeCount =
                 ordBadge ? unreadCount : (loungeBadge ? loungeUnreadCount : 0);
             final showBadge = ordBadge || loungeBadge;

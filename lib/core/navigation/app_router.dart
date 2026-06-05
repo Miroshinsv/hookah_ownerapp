@@ -6,7 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../features/auth/providers/auth_provider.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/chat/screens/chat_screen.dart';
-import '../../features/chat/screens/lounge_chat_screen.dart';
+import '../../features/chat/screens/lounge_chat_screen.dart'
+    show LoungeChatScreen, StaffLoungeChatScreen;
 import '../../features/dashboard/screens/dashboard_screen.dart';
 import '../../features/feedback/screens/reviews_screen.dart';
 import '../../features/lounges/screens/lounge_form_screen.dart';
@@ -63,6 +64,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/lounges',
             builder: (ctx, _) => const LoungesScreen(),
+          ),
+          GoRoute(
+            path: '/staff-chat',
+            builder: (ctx, _) => const StaffLoungeChatScreen(),
           ),
         ],
       ),

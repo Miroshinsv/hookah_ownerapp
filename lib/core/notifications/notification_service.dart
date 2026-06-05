@@ -39,6 +39,20 @@ class NotificationService {
     return null;
   }
 
+  static Future<String?> getPendingLoungeChatOpen() async {
+    if (!_initialized) return null;
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp == true) {
+        final payload = details?.notificationResponse?.payload;
+        if (payload != null && payload.startsWith('lounge-chat:')) {
+          return payload.substring(12);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   // Custom icon if available, fallback to launcher icon.
   static const _customIcon   = '@drawable/ic_notification';
   static const _fallbackIcon = '@mipmap/ic_launcher';

@@ -13,13 +13,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 
 const _tokenKey = 'auth_token';
+const _userIdStorageKey = 'auth_user_id';
+const _loungeIdStorageKey = 'auth_lounge_id';
 const _channelId = 'orders_v2';
 const _channelName = 'Заказы';
 const _msgChannelId = 'chat_messages';
 const _msgChannelName = 'Сообщения чата';
 const _foregroundNotifId = 88888;
 const _bgLastMsgTsPrefix = 'bg_last_msg_ts_';
+const _bgLoungeChatTsPrefix = 'bg_lounge_chat_ts_';
 const _unreadKey = 'unread_order_ids';
+const _unreadLoungeChatKey = 'unread_lounge_chat_ids';
 const _staffRoles = {'admin', 'owner', 'hookah_master', 'hostess', 'waiter', 'staff'};
 
 // In-memory set of order IDs already notified within this service lifetime.
@@ -129,9 +133,11 @@ void _onStart(ServiceInstance service) async {
   // Check immediately, then every 30 seconds.
   await _checkNewOrders(plugin, service);
   await _checkNewMessages(plugin);
+  await _checkLoungeChatMessages(plugin);
   Timer.periodic(const Duration(seconds: 30), (_) async {
     await _checkNewOrders(plugin, service);
     await _checkNewMessages(plugin);
+    await _checkLoungeChatMessages(plugin);
   });
 }
 
@@ -370,6 +376,95 @@ Future<void> _checkOrderMessages(
     );
   } catch (e) {
     debugPrint('BackgroundService._checkOrderMessages($orderId): $e');
+  }
+}
+
+Future<void> _checkLoungeChatMessages(
+    FlutterLocalNotificationsPlugin plugin) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final token = prefs.getString(_tokenKey);
+    if (token == null || token.isEmpty) return;
+
+    final loungeId = prefs.getString(_loungeIdStorageKey);
+    if (loungeId == null || loungeId.isEmpty) return;
+
+    final response = await http
+        .post(
+          Uri.parse(AppConfig.graphqlUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'query':
+                '{ loungeChatMessages(loungeId: "$loungeId", limit: 50) { messageId senderId text createdAt } }',
+          }),
+        )
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode != 200) return;
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    if (decoded['errors'] != null) return;
+
+    final messages = (decoded['data']?['loungeChatMessages'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+    if (messages.isEmpty) return;
+
+    final tsKey = '$_bgLoungeChatTsPrefix$loungeId';
+    final lastSeenStr = prefs.getString(tsKey);
+    final lastSeen = lastSeenStr != null ? DateTime.tryParse(lastSeenStr) : null;
+
+    final times = messages
+        .map((m) => DateTime.tryParse(m['createdAt'] as String? ?? ''))
+        .whereType<DateTime>()
+        .toList()
+      ..sort();
+    if (times.isNotEmpty) {
+      await prefs.setString(tsKey, times.last.toIso8601String());
+    }
+
+    if (lastSeen == null) return;
+
+    final myUserId = prefs.getString(_userIdStorageKey);
+    final newMessages = messages.where((m) {
+      final senderId = m['senderId'] as String?;
+      if (myUserId != null && senderId == myUserId) return false;
+      final ts = DateTime.tryParse(m['createdAt'] as String? ?? '');
+      return ts != null && ts.isAfter(lastSeen);
+    }).toList();
+
+    if (newMessages.isEmpty) return;
+
+    final unreadList = prefs.getStringList(_unreadLoungeChatKey)?.toSet() ?? {};
+    unreadList.add(loungeId);
+    await prefs.setStringList(_unreadLoungeChatKey, unreadList.toList());
+
+    final text = newMessages.last['text'] as String? ?? '';
+    await plugin.show(
+      id: loungeId.hashCode ^ 0xB000,
+      title: 'Новое сообщение в чате заведения',
+      body: text.isNotEmpty ? text : 'Новое сообщение',
+      notificationDetails: NotificationDetails(
+        android: AndroidNotificationDetails(
+          _msgChannelId, _msgChannelName,
+          importance: Importance.high,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+          icon: _notifIcon,
+        ),
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentSound: true,
+          presentBadge: true,
+        ),
+      ),
+      payload: 'lounge-chat:$loungeId',
+    );
+  } catch (e) {
+    debugPrint('BackgroundService._checkLoungeChatMessages: $e');
   }
 }
 

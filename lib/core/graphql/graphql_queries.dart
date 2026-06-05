@@ -436,6 +436,9 @@ query LoungeFeedbacks($loungeId: String!, $limit: Int) {
     feedbackId
     score
     createdAt
+    userId
+    orderId
+    comment
   }
 }
 ''';

@@ -32,19 +32,32 @@ class UserScreen extends ConsumerWidget {
     final loungesState = ref.watch(loungesProvider);
 
     final myLounges = loungesState.lounges
-        .where((l) => auth.isAdmin || l.ownerUserId == auth.userId)
+        .where((l) =>
+            auth.isAdmin ||
+            l.ownerUserId == auth.userId ||
+            l.id == auth.loungeId)
         .toList();
 
     final userOrders = allOrders
         .where((o) => o.userId == userId || o.phone == userId)
         .toList();
 
+    OrderModel? nameOrder;
+    for (final o in userOrders) {
+      if (o.firstName != null && o.firstName!.isNotEmpty) {
+        nameOrder = o;
+        break;
+      }
+    }
+    final resolvedFirst = firstName ?? nameOrder?.firstName;
+    final resolvedLast = lastName ?? nameOrder?.lastName;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Клиент')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _ProfileHeader(userId: userId, firstName: firstName, lastName: lastName),
+          _ProfileHeader(userId: userId, firstName: resolvedFirst, lastName: resolvedLast),
           const SizedBox(height: 20),
           _SectionTitle('Заказы', count: userOrders.length, icon: Icons.receipt_long_outlined),
           const SizedBox(height: 8),

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_theme.dart';
 import '../../../shared/models/lounge_model.dart';
 import '../../auth/providers/auth_provider.dart';
 import '../../lounges/providers/lounges_provider.dart';
+import '../../users/screens/user_screen.dart';
 import '../providers/lounge_feedback_provider.dart';
 
 class ReviewsScreen extends ConsumerWidget {
@@ -31,7 +33,7 @@ class ReviewsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Отзывы'),
+        title: const Text('Обратная связь'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -170,42 +172,10 @@ class _LoungeFeedbackCard extends ConsumerWidget {
               ),
             )
           else
-            ...sorted.take(100).map((entry) {
-              final score = entry.score.round().clamp(0, 5);
-              return Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                child: Row(
-                  children: [
-                    ...List.generate(
-                      5,
-                      (i) => Icon(
-                        i < score
-                            ? Icons.star_rounded
-                            : Icons.star_outline_rounded,
-                        size: 16,
-                        color: AppColors.gold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      entry.score.toStringAsFixed(1),
-                      style: const TextStyle(
-                        color: AppColors.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      df.format(entry.createdAt.toLocal()),
-                      style: const TextStyle(
-                          color: AppColors.muted, fontSize: 12),
-                    ),
-                  ],
-                ),
-              );
-            }),
+            ...sorted.take(100).map((entry) => _FeedbackRow(
+                  entry: entry,
+                  df: df,
+                )),
         ],
       ),
     );
@@ -223,5 +193,122 @@ class _LoungeFeedbackCard extends ConsumerWidget {
       default:
         return 'отзывов';
     }
+  }
+}
+
+class _FeedbackRow extends StatelessWidget {
+  final FeedbackEntry entry;
+  final DateFormat df;
+
+  const _FeedbackRow({required this.entry, required this.df});
+
+  @override
+  Widget build(BuildContext context) {
+    final score = entry.score.round().clamp(0, 5);
+    final hasUser = entry.userId != null && entry.userId!.isNotEmpty;
+    final hasOrder = entry.orderId != null && entry.orderId!.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Строка: аватар + имя + дата ──────────────────────────────
+          Row(
+            children: [
+              if (hasUser)
+                GestureDetector(
+                  onTap: () => context.push(
+                    '/user/${Uri.encodeComponent(entry.userId!)}',
+                  ),
+                  child: UserAvatar(
+                    userId: entry.userId,
+                    radius: 16,
+                  ),
+                )
+              else
+                const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.border,
+                  child: Icon(Icons.person_outline, size: 16, color: AppColors.muted),
+                ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (hasUser)
+                      GestureDetector(
+                        onTap: () => context.push(
+                          '/user/${Uri.encodeComponent(entry.userId!)}',
+                        ),
+                        child: Text(
+                          entry.userId!,
+                          style: const TextStyle(
+                            color: AppColors.text,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    if (hasOrder)
+                      GestureDetector(
+                        onTap: () => context.push('/chat/${entry.orderId}'),
+                        child: Text(
+                          '#${entry.orderId!.substring(0, entry.orderId!.length.clamp(0, 8))}',
+                          style: const TextStyle(
+                            color: AppColors.gold,
+                            fontSize: 11,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AppColors.gold,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Text(
+                df.format(entry.createdAt.toLocal()),
+                style: const TextStyle(color: AppColors.muted, fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // ── Звёзды ───────────────────────────────────────────────────
+          Row(
+            children: [
+              ...List.generate(
+                5,
+                (i) => Icon(
+                  i < score
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  size: 16,
+                  color: AppColors.gold,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                entry.score.toStringAsFixed(1),
+                style: const TextStyle(
+                  color: AppColors.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+          if (entry.comment != null && entry.comment!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              entry.comment!,
+              style: const TextStyle(color: AppColors.text, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 6),
+          const Divider(height: 1, color: AppColors.border),
+        ],
+      ),
+    );
   }
 }
