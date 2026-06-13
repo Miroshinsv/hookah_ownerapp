@@ -29,6 +29,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (ref.read(authProvider).sessionExpired) {
+        setState(() => _error = 'Сессия истекла, войдите снова');
+        ref.read(authProvider.notifier).clearSessionExpired();
+      }
+    });
+  }
+
+  @override
   void dispose() {
     _userIdCtrl.dispose();
     _passwordCtrl.dispose();

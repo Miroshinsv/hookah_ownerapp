@@ -11,6 +11,7 @@ enum WsStatus { disconnected, connecting, connected, reconnecting }
 
 class WsClient {
   final String token;
+  final void Function()? onUnauthorized;
 
   WebSocketChannel? _channel;
   StreamSubscription? _sub;
@@ -25,7 +26,7 @@ class WsClient {
   Stream<WsStatus> get statusStream => _statusController.stream;
   WsStatus get status => _status;
 
-  WsClient(this.token);
+  WsClient(this.token, {this.onUnauthorized});
 
   Future<void> connect() async {
     if (_disposed) return;
@@ -80,8 +81,10 @@ class WsClient {
           }
         case 'error':
           final id = msg['id'] as String?;
+          final payload = msg['payload'];
+          if (_isUnauthorized(payload)) onUnauthorized?.call();
           if (id != null) {
-            _subscriptions[id]?.addError(msg['payload'] ?? 'Unknown error');
+            _subscriptions[id]?.addError(payload ?? 'Unknown error');
           }
         case 'complete':
           final id = msg['id'] as String?;
@@ -94,6 +97,19 @@ class WsClient {
     } catch (e) {
       debugPrint('WsClient parse error: $e');
     }
+  }
+
+  // The server sends a GraphQL error with message "unauthorized" when the
+  // JWT used for `connection_init` is missing, invalid or expired.
+  static bool _isUnauthorized(dynamic payload) {
+    if (payload is List) {
+      return payload.any((e) =>
+          e is Map && (e['message'] as String?)?.toLowerCase() == 'unauthorized');
+    }
+    if (payload is Map) {
+      return (payload['message'] as String?)?.toLowerCase() == 'unauthorized';
+    }
+    return false;
   }
 
   void _scheduleReconnect() {

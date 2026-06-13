@@ -11,8 +11,15 @@ class AuthState {
   final String? role;
   final String? loungeId;
   final String? userId;
+  final bool sessionExpired;
 
-  const AuthState({this.token, this.role, this.loungeId, this.userId});
+  const AuthState({
+    this.token,
+    this.role,
+    this.loungeId,
+    this.userId,
+    this.sessionExpired = false,
+  });
 
   bool get isAuthenticated => token != null && token!.isNotEmpty;
   bool get isAdmin => role == 'admin';
@@ -28,12 +35,14 @@ class AuthState {
     String? role,
     String? loungeId,
     String? userId,
+    bool? sessionExpired,
   }) =>
       AuthState(
         token: token ?? this.token,
         role: role ?? this.role,
         loungeId: loungeId ?? this.loungeId,
         userId: userId ?? this.userId,
+        sessionExpired: sessionExpired ?? this.sessionExpired,
       );
 }
 
@@ -102,6 +111,20 @@ class AuthNotifier extends Notifier<AuthState> {
     await _storage.clearAuth();
     state = const AuthState();
   }
+
+  /// Called when the server reports the JWT as expired/invalid.
+  /// Logs the user out and flags the login screen to show a notice.
+  Future<void> handleSessionExpired() async {
+    if (state.token == null) return;
+    await _storage.clearAuth();
+    state = const AuthState(sessionExpired: true);
+  }
+
+  void clearSessionExpired() {
+    if (state.sessionExpired) {
+      state = state.copyWith(sessionExpired: false);
+    }
+  }
 }
 
 final storageServiceProvider = Provider<StorageService>((ref) {
@@ -112,12 +135,18 @@ final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new)
 
 final graphqlClientProvider = Provider<GraphQLClient>((ref) {
   final auth = ref.watch(authProvider);
-  return buildGraphQLClient(auth.token ?? '');
+  return buildGraphQLClient(
+    auth.token ?? '',
+    onUnauthorized: () => ref.read(authProvider.notifier).handleSessionExpired(),
+  );
 });
 
 final wsClientProvider = Provider<WsClient>((ref) {
   final auth = ref.watch(authProvider);
-  final client = WsClient(auth.token ?? '');
+  final client = WsClient(
+    auth.token ?? '',
+    onUnauthorized: () => ref.read(authProvider.notifier).handleSessionExpired(),
+  );
   if (auth.isAuthenticated) {
     client.connect();
   }

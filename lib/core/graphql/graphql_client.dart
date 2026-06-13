@@ -10,6 +10,9 @@ import '../config/app_config.dart';
 // operation header and substitutes $name references with literal values.
 class _GraphQLHttpClient extends http.BaseClient {
   final http.Client _inner = http.Client();
+  final void Function()? onUnauthorized;
+
+  _GraphQLHttpClient({this.onUnauthorized});
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest baseRequest) async {
@@ -36,6 +39,8 @@ class _GraphQLHttpClient extends http.BaseClient {
     final bytes = await response.stream.toBytes();
     dev.log('← ${response.statusCode}\nBody: ${String.fromCharCodes(bytes)}',
         name: 'HTTP');
+
+    if (_isUnauthorized(bytes)) onUnauthorized?.call();
 
     return http.StreamedResponse(
       Stream.value(bytes),
@@ -76,15 +81,29 @@ class _GraphQLHttpClient extends http.BaseClient {
     if (v is List) return '[${v.map(_fmt).join(', ')}]';
     return '"$v"';
   }
+
+  // The server responds with HTTP 200 and a GraphQL error whose message is
+  // exactly "unauthorized" when the JWT is missing, invalid or expired.
+  static bool _isUnauthorized(List<int> bytes) {
+    try {
+      final json = jsonDecode(utf8.decode(bytes));
+      final errors = json is Map<String, dynamic> ? json['errors'] : null;
+      if (errors is! List) return false;
+      return errors.any((e) =>
+          e is Map && (e['message'] as String?)?.toLowerCase() == 'unauthorized');
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
-GraphQLClient buildGraphQLClient(String token) {
+GraphQLClient buildGraphQLClient(String token, {void Function()? onUnauthorized}) {
   final httpLink = HttpLink(
     AppConfig.graphqlUrl,
     defaultHeaders: {
       if (token.isNotEmpty) 'Authorization': 'Bearer $token',
     },
-    httpClient: _GraphQLHttpClient(),
+    httpClient: _GraphQLHttpClient(onUnauthorized: onUnauthorized),
   );
 
   return GraphQLClient(
