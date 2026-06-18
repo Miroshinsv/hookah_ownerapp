@@ -3,7 +3,7 @@ import 'dart:convert';
 /// Возвращает null если строка null или пустая — нормализует ответ бэкенда.
 String? _nonEmpty(String? v) => (v == null || v.isEmpty) ? null : v;
 
-enum StaffRole { hookahMaster, hostess, waiter, owner, admin }
+enum StaffRole { hookahMaster, hostess, waiter, owner, admin, deputy }
 
 extension StaffRoleX on StaffRole {
   String get apiValue => switch (this) {
@@ -12,6 +12,7 @@ extension StaffRoleX on StaffRole {
         StaffRole.waiter => 'waiter',
         StaffRole.owner => 'owner',
         StaffRole.admin => 'admin',
+        StaffRole.deputy => 'deputy',
       };
 
   String get label => switch (this) {
@@ -20,6 +21,7 @@ extension StaffRoleX on StaffRole {
         StaffRole.waiter => 'Официант',
         StaffRole.owner => 'Владелец',
         StaffRole.admin => 'Администратор',
+        StaffRole.deputy => 'Заместитель',
       };
 
   static StaffRole fromString(String v) => switch (v) {
@@ -28,6 +30,7 @@ extension StaffRoleX on StaffRole {
         'waiter' => StaffRole.waiter,
         'owner' => StaffRole.owner,
         'admin' => StaffRole.admin,
+        'deputy' => StaffRole.deputy,
         _ => StaffRole.waiter,
       };
 }
@@ -78,8 +81,11 @@ class StaffModel {
     return parts.isEmpty ? 'Без имени' : parts.join(' ');
   }
 
-  List<StaffRole> visibleRoles({required bool isAdmin}) =>
-      isAdmin ? roles : roles.where((r) => r != StaffRole.owner).toList();
+  List<StaffRole> visibleRoles({required bool isAdmin}) => isAdmin
+      ? roles
+      : roles
+          .where((r) => r != StaffRole.owner && r != StaffRole.deputy)
+          .toList();
 
   String rolesLabel({required bool isAdmin}) {
     final visible = visibleRoles(isAdmin: isAdmin);
@@ -171,8 +177,11 @@ class StaffProfileModel {
     return parts.isEmpty ? 'Без имени' : parts.join(' ');
   }
 
-  List<StaffRole> visibleRoles({required bool isAdmin}) =>
-      isAdmin ? roles : roles.where((r) => r != StaffRole.owner).toList();
+  List<StaffRole> visibleRoles({required bool isAdmin}) => isAdmin
+      ? roles
+      : roles
+          .where((r) => r != StaffRole.owner && r != StaffRole.deputy)
+          .toList();
 
   String rolesLabel({required bool isAdmin}) {
     final visible = visibleRoles(isAdmin: isAdmin);

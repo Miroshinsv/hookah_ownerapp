@@ -293,16 +293,32 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
 
   List<(String, String)> _availableRoles() {
     final auth = ref.read(authProvider);
-    final roles = [
+    const base = [
       ('hookah_master', 'Кальянный мастер'),
       ('hostess', 'Хостес'),
       ('waiter', 'Официант'),
-      ('owner', 'Владелец'),
     ];
     if (auth.isAdmin) {
-      return [...roles, ('admin', 'Администратор')];
+      return [
+        ...base,
+        ('owner', 'Владелец'),
+        ('deputy', 'Заместитель'),
+        ('admin', 'Администратор'),
+      ];
     }
-    return roles.take(3).toList();
+    if (auth.isOwner) {
+      return [...base, ('owner', 'Владелец')];
+    }
+    // deputy и staff могут назначать только базовые роли
+    return base;
+  }
+
+  /// Роли, которые уже есть у сотрудника, но текущий пользователь
+  /// не может их снять/добавить — показываем как заблокированные.
+  List<String> _lockedRoles() {
+    if (!_isEdit) return [];
+    final assignable = _availableRoles().map((r) => r.$1).toSet();
+    return _selectedRoles.where((r) => !assignable.contains(r)).toList();
   }
 
   // ──────────────────────────── submit ────────────────────────────
@@ -697,26 +713,46 @@ class _StaffFormScreenState extends ConsumerState<StaffFormScreen> {
               'Роли *',
               style: TextStyle(color: AppColors.muted, fontSize: 12),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              runSpacing: 4,
-              children: roles.map((r) {
-                final isSelected = _selectedRoles.contains(r.$1);
-                return FilterChip(
-                  label: Text(r.$2),
-                  selected: isSelected,
-                  onSelected: (on) => setState(() {
-                    if (on) {
-                      _selectedRoles.add(r.$1);
-                    } else {
-                      _selectedRoles.remove(r.$1);
-                    }
-                  }),
-                );
-              }).toList(),
+              runSpacing: 8,
+              children: [
+                // Роли, которые может назначить текущий пользователь
+                ...roles.map((r) {
+                  final isSelected = _selectedRoles.contains(r.$1);
+                  return FilterChip(
+                    label: Text(r.$2),
+                    selected: isSelected,
+                    onSelected: (on) => setState(() {
+                      if (on) {
+                        _selectedRoles.add(r.$1);
+                      } else {
+                        _selectedRoles.remove(r.$1);
+                      }
+                    }),
+                  );
+                }),
+                // Заблокированные роли (уже есть у сотрудника, но нет прав менять)
+                ..._lockedRoles().map((apiVal) {
+                  final label = StaffRole.values
+                      .where((r) => r.apiValue == apiVal)
+                      .map((r) => r.label)
+                      .firstOrNull ?? apiVal;
+                  return Chip(
+                    label: Text(
+                      label,
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    avatar: const Icon(Icons.lock_outline,
+                        size: 14, color: AppColors.muted),
+                    backgroundColor: AppColors.surface2,
+                    side: const BorderSide(color: AppColors.border),
+                  );
+                }),
+              ],
             ),
-            if (_selectedRoles.isEmpty)
+            if (_selectedRoles.isEmpty && _lockedRoles().isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text(
