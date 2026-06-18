@@ -136,7 +136,7 @@ jobs:
         run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=${{ steps.setup-java.outputs.path }}" >> $GITHUB_ENV
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Install NDK
         run: sdkmanager --install "ndk;27.0.12077973"
