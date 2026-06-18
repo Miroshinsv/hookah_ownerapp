@@ -135,12 +135,6 @@ jobs:
       - name: Pin Gradle JDK to Java 21
         run: echo "GRADLE_OPTS=-Dorg.gradle.java.home=${{ steps.setup-java.outputs.path }}" >> $GITHUB_ENV
 
-      - name: Setup Android SDK
-        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
-
-      - name: Install NDK
-        run: sdkmanager --install "ndk;27.0.12077973"
-
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
