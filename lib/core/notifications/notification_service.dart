@@ -182,6 +182,39 @@ class NotificationService {
     }
   }
 
+  static Future<void> showGeneric({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    if (!_initialized) return;
+    try {
+      await _plugin.show(
+        id: title.hashCode ^ body.hashCode,
+        title: title,
+        body: body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channelId, _channelName,
+            importance: Importance.high,
+            priority: Priority.high,
+            playSound: true,
+            enableVibration: true,
+            icon: _notifIcon,
+          ),
+          iOS: const DarwinNotificationDetails(
+            presentAlert: true,
+            presentSound: true,
+            presentBadge: true,
+          ),
+        ),
+        payload: payload,
+      );
+    } catch (e) {
+      debugPrint('NotificationService.showGeneric: $e');
+    }
+  }
+
   static Future<void> showNewOrder(String orderId) async {
     if (!_initialized) return;
     try {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/background/background_service.dart';
 import 'firebase_options.dart';
 import 'core/navigation/app_router.dart';
+import 'core/notifications/fcm_service.dart';
 import 'core/notifications/notification_service.dart';
 import 'core/storage/storage_service.dart';
 import 'core/theme/app_theme.dart';
@@ -12,6 +13,8 @@ import 'features/auth/providers/auth_provider.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  // FCM init must come before runApp; registers background handler.
+  await FcmService.init();
   await NotificationService.init();
   await BackgroundOrderService.initialize();
   final storage = await StorageService.create();

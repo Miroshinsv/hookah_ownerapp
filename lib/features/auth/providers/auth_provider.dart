@@ -4,6 +4,7 @@ import 'package:graphql_flutter/graphql_flutter.dart';
 import '../../../core/graphql/graphql_client.dart';
 import '../../../core/graphql/graphql_queries.dart';
 import '../../../core/graphql/ws_client.dart';
+import '../../../core/notifications/fcm_service.dart';
 import '../../../core/storage/storage_service.dart';
 
 class AuthState {
@@ -104,10 +105,18 @@ class AuthNotifier extends Notifier<AuthState> {
       loungeId: loungeId,
       userId: userId,
     );
+
+    // Register FCM device token after JWT is saved and state is updated.
+    await FcmService.onLogin(buildGraphQLClient(token));
+
     return null;
   }
 
   Future<void> logout() async {
+    final currentToken = state.token;
+    if (currentToken != null) {
+      await FcmService.onLogout(buildGraphQLClient(currentToken));
+    }
     await _storage.clearAuth();
     state = const AuthState();
   }
@@ -116,6 +125,7 @@ class AuthNotifier extends Notifier<AuthState> {
   /// Logs the user out and flags the login screen to show a notice.
   Future<void> handleSessionExpired() async {
     if (state.token == null) return;
+    await FcmService.cancelRefreshListener();
     await _storage.clearAuth();
     state = const AuthState(sessionExpired: true);
   }

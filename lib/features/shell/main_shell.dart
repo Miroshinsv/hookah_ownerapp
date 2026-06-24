@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/notifications/fcm_service.dart';
 import '../../core/notifications/notification_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/update/update_dialog.dart';
@@ -30,6 +31,7 @@ class _MainShellState extends ConsumerState<MainShell>
     with WidgetsBindingObserver {
   StreamSubscription<String>? _notifSub;
   StreamSubscription<String>? _loungeNotifSub;
+  StreamSubscription<Map<String, String?>>? _fcmNavSub;
 
   @override
   void initState() {
@@ -38,16 +40,19 @@ class _MainShellState extends ConsumerState<MainShell>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkUpdate();
       _checkPendingNotification();
+      _checkFcmInitialMessage();
     });
     _notifSub = NotificationService.chatOpenStream.listen(_openChat);
     _loungeNotifSub =
         NotificationService.loungeChatOpenStream.listen(_openLoungeChat);
+    _fcmNavSub = FcmService.navigationStream.listen(_handleFcmNavigation);
   }
 
   @override
   void dispose() {
     _notifSub?.cancel();
     _loungeNotifSub?.cancel();
+    _fcmNavSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -87,6 +92,42 @@ class _MainShellState extends ConsumerState<MainShell>
         context.push(
             '/lounge-chat/$loungeId?name=${Uri.encodeComponent(name)}');
       }
+    }
+  }
+
+  Future<void> _checkFcmInitialMessage() async {
+    final data = await FcmService.getInitialNavigationData();
+    if (data != null && mounted) _handleFcmNavigation(data);
+  }
+
+  void _handleFcmNavigation(Map<String, String?> data) {
+    if (!mounted) return;
+    final eventType = data['eventType'];
+    final orderId = data['orderId'];
+    final loungeId = data['loungeId'];
+    final auth = ref.read(authProvider);
+
+    switch (eventType) {
+      case 'new_order':
+        context.go('/orders');
+      case 'order_status':
+        if (orderId != null) context.push('/chat/$orderId');
+      case 'new_message':
+        if (orderId != null) context.push('/chat/$orderId');
+      case 'lounge_chat_message':
+        if (auth.isStaff) {
+          context.go('/staff-chat');
+        } else if (loungeId != null) {
+          final lounge = ref
+              .read(loungesProvider)
+              .lounges
+              .where((l) => l.id == loungeId)
+              .firstOrNull;
+          context.push(
+              '/lounge-chat/$loungeId?name=${Uri.encodeComponent(lounge?.name ?? '')}');
+        }
+      case 'feedback_request':
+        if (!auth.isStaff) context.go('/reviews');
     }
   }
 

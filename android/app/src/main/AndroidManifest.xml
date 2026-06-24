@@ -60,6 +60,11 @@
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
 
+        <!-- FCM background notifications use the orders channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="orders_v2" />
+
         <!-- Background order polling service -->
         <service
             android:name="id.flutter.flutter_background_service.BackgroundService"

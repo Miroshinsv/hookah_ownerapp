@@ -506,6 +506,18 @@ query LoungeNotes($loungeId: String!, $limit: Int) {
 }
 ''';
 
+const kRegisterDeviceMutation = r'''
+mutation RegisterDevice($fcmToken: String!) {
+  registerDevice(fcmToken: $fcmToken)
+}
+''';
+
+const kUnregisterDeviceMutation = r'''
+mutation UnregisterDevice($fcmToken: String!) {
+  unregisterDevice(fcmToken: $fcmToken)
+}
+''';
+
 const kRequestFeedbackMutation = r'''
 mutation RequestOrderFeedback($orderId: String!) {
   requestOrderFeedback(orderId: $orderId)
